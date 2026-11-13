@@ -5,3 +5,5 @@
 //! host gives it the bytes of each image, and takes the bytes that the
 //! devices write. The same core builds for a native host and for
 //! `wasm32-unknown-unknown`.
+
+pub mod ram;
