@@ -1,0 +1,99 @@
+# Builds the guest images (xv6, and OpenSBI, Linux and BusyBox) from the
+# fixed sources that the scripts name, and boots each one on hartwood.
+#
+# A cache keeps each image until its script changes, so a push that changes
+# only the emulator boots the same images again in a few minutes.
+#
+# The pages workflow calls this workflow, and takes the images from its
+# artifact.
+
+name: images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  xv6:
+    name: build xv6
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/xv6
+          key: xv6-${{ hashFiles('scripts/build-xv6.sh') }}
+      - name: build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-unknown-elf
+          scripts/build-xv6.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: xv6
+          path: build/xv6/
+          if-no-files-found: error
+
+  linux:
+    name: build OpenSBI, Linux and BusyBox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/linux
+          key: linux-${{ hashFiles('scripts/build-linux.sh', 'scripts/linux.config', 'scripts/rootfs/**') }}
+      - name: build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu flex bison bc cpio libssl-dev libelf-dev
+          scripts/build-linux.sh
+      # QEMU is the reference. If the images do not boot on QEMU, the fault
+      # is in the images and not in hartwood.
+      - name: boot the images on QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-misc
+          timeout 300 qemu-system-riscv64 -machine virt -m 256M -nographic \
+            -bios build/linux/fw_jump.bin -kernel build/linux/Image \
+            -initrd build/linux/rootfs.cpio -append "console=ttyS0" \
+            > qemu.log 2>&1 < /dev/null || true
+          cat qemu.log
+          grep -q "Welcome to Linux on hartwood." qemu.log
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux
+          path: build/linux/
+          if-no-files-found: error
+
+  boot:
+    name: boot the images on hartwood
+    needs: [xv6, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.100.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: xv6
+          path: build/xv6
+      - run: cargo build --release --locked -p hartwood-cli
+      - name: xv6 runs ls
+        run: |
+          timeout 600 target/release/hartwood run build/xv6/kernel --drive build/xv6/fs.img \
+            --input 'ls\n' --until 'zombie'
