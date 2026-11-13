@@ -686,3 +686,77 @@ mod tests {
         assert_eq!(decode(0xffff_ffff).op, Op::Illegal);
     }
 }
+
+/// A cache of decoded instructions, keyed by their raw bits.
+///
+/// `decode` is a pure function of the bits, so an entry can never be stale:
+/// code that changes itself only changes which bits come in. The cache needs
+/// no flush, not even on `fence.i`.
+///
+/// A 16-bit instruction never has 0b11 in its two low bits, and a 32-bit
+/// one always has, so the two kinds share one key space with no collision.
+pub struct DecodeCache {
+    entries: Box<[(u32, Instruction)]>,
+}
+
+const DECODE_CACHE_SIZE: usize = 4096;
+
+impl Default for DecodeCache {
+    fn default() -> Self {
+        // Raw bits 0 are a 16-bit instruction, so each empty slot holds
+        // what that key really decodes to.
+        Self {
+            entries: vec![(0, decode_compressed(0)); DECODE_CACHE_SIZE].into_boxed_slice(),
+        }
+    }
+}
+
+impl DecodeCache {
+    fn slot(raw: u32) -> usize {
+        // A multiplicative hash spreads the opcode bits over the index.
+        (raw.wrapping_mul(0x9e37_79b1) >> 20) as usize % DECODE_CACHE_SIZE
+    }
+
+    /// Decodes an instruction: a 16-bit one if the two low bits are not
+    /// 0b11, and a 32-bit one otherwise.
+    pub fn decode(&mut self, raw: u32) -> Instruction {
+        let slot = Self::slot(raw);
+        let (key, inst) = self.entries[slot];
+        if key == raw {
+            return inst;
+        }
+        let inst = if raw & 3 == 3 {
+            decode(raw)
+        } else {
+            decode_compressed(raw as u16)
+        };
+        self.entries[slot] = (raw, inst);
+        inst
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[test]
+    fn the_cache_gives_what_decode_gives() {
+        let mut cache = DecodeCache::default();
+        for raw in [
+            0u32,
+            0x7139,
+            0xfff5_8513,
+            0x0010_00ef,
+            0x7139,
+            0xfff5_8513,
+            0x0001,
+        ] {
+            let expected = if raw & 3 == 3 {
+                decode(raw)
+            } else {
+                decode_compressed(raw as u16)
+            };
+            assert_eq!(cache.decode(raw), expected);
+        }
+    }
+}
