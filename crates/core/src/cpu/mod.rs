@@ -261,7 +261,7 @@ impl Cpu {
     }
 
     /// Asks the PMP if an access to a physical address is allowed.
-    pub(crate) fn pmp_allows(&self, paddr: u64, width: usize, access: Access) -> bool {
+    pub(crate) fn pmp_allows(&mut self, paddr: u64, width: usize, access: Access) -> bool {
         let mode = match access {
             Access::Fetch => self.mode,
             _ => self.data_mode(),

@@ -30,6 +30,34 @@ const ADDR_MASK: u64 = (1 << 54) - 1;
 pub struct Pmp {
     cfg: [u8; ENTRIES],
     addr: [u64; ENTRIES],
+    /// Tells if an entry is locked, so it applies to M-mode too.
+    any_locked: bool,
+    /// The last decision for each mode and kind of access, with the range of
+    /// addresses that the same decision covers. A write to a PMP register
+    /// clears it.
+    cache: [Option<Decision>; 9],
+}
+
+/// A decision of the PMP that holds for each access inside `[start, end)`.
+#[derive(Debug, Clone, Copy)]
+struct Decision {
+    start: u64,
+    end: u64,
+    allowed: bool,
+}
+
+fn cache_slot(access: Access, mode: Mode) -> usize {
+    let a = match access {
+        Access::Fetch => 0,
+        Access::Load => 1,
+        Access::Store => 2,
+    };
+    let m = match mode {
+        Mode::User => 0,
+        Mode::Supervisor => 1,
+        Mode::Machine => 2,
+    };
+    3 * m + a
 }
 
 impl Pmp {
@@ -54,6 +82,8 @@ impl Pmp {
             }
             self.cfg[base + i] = byte;
         }
+        self.any_locked = self.cfg.iter().any(|c| c & L != 0);
+        self.cache = [None; 9];
     }
 
     pub fn read_addr(&self, i: usize) -> u64 {
@@ -69,6 +99,7 @@ impl Pmp {
         if !locked && !next_is_locked_tor {
             self.addr[i] = value & ADDR_MASK;
         }
+        self.cache = [None; 9];
     }
 
     fn mode(&self, i: usize) -> u8 {
@@ -78,7 +109,7 @@ impl Pmp {
     /// Tells if no entry is locked. Then each access from M-mode is allowed,
     /// and the check of M-mode can stop at once.
     pub fn machine_is_free(&self) -> bool {
-        self.cfg.iter().all(|c| c & L == 0)
+        !self.any_locked
     }
 
     /// The range `[start, end)` that entry `i` covers, in bytes.
@@ -105,11 +136,45 @@ impl Pmp {
     }
 
     /// Checks one access of `width` bytes at the physical address `addr`.
-    pub fn allows(&self, addr: u64, width: u64, access: Access, mode: Mode) -> bool {
-        if mode == Mode::Machine && self.machine_is_free() {
+    ///
+    /// The check keeps its decision with the range of addresses that it
+    /// covers, so the next access near this one needs only a compare.
+    pub fn allows(&mut self, addr: u64, width: u64, access: Access, mode: Mode) -> bool {
+        if mode == Mode::Machine && !self.any_locked {
             return true;
         }
         let last = addr.saturating_add(width - 1);
+        let slot = cache_slot(access, mode);
+        if let Some(d) = self.cache[slot]
+            && addr >= d.start
+            && last < d.end
+        {
+            return d.allowed;
+        }
+        let (allowed, range) = self.decide(addr, last, access, mode);
+        if let Some((start, end)) = range {
+            self.cache[slot] = Some(Decision {
+                start,
+                end,
+                allowed,
+            });
+        }
+        allowed
+    }
+
+    /// Finds the decision for an access to `addr..=last`, and the range
+    /// around it where each access gets the same decision. The range is
+    /// `None` when the access crosses the edge of an entry.
+    fn decide(
+        &self,
+        addr: u64,
+        last: u64,
+        access: Access,
+        mode: Mode,
+    ) -> (bool, Option<(u64, u64)>) {
+        // The range shrinks to stay clear of each entry that does not
+        // match, so a later access in the range cannot match it either.
+        let (mut low, mut high) = (0u64, u64::MAX);
         for i in 0..ENTRIES {
             let Some((start, end)) = self.range(i) else {
                 continue;
@@ -117,24 +182,30 @@ impl Pmp {
             let first_in = addr >= start && addr < end;
             let last_in = last >= start && last < end;
             if !first_in && !last_in {
+                if end <= addr {
+                    low = low.max(end);
+                } else {
+                    high = high.min(start);
+                }
                 continue;
             }
             // An access that is only partly inside an entry fails.
             if first_in != last_in {
-                return false;
+                return (false, None);
             }
+            let range = Some((low.max(start), high.min(end)));
             let cfg = self.cfg[i];
             if mode == Mode::Machine && cfg & L == 0 {
-                return true;
+                return (true, range);
             }
             let need = match access {
                 Access::Fetch => X,
                 Access::Load => R,
                 Access::Store => W,
             };
-            return cfg & need != 0;
+            return (cfg & need != 0, range);
         }
-        mode == Mode::Machine
+        (mode == Mode::Machine, Some((low, high)))
     }
 }
 
@@ -153,14 +224,14 @@ mod tests {
 
     #[test]
     fn with_no_entry_only_machine_mode_has_access() {
-        let p = Pmp::default();
+        let mut p = Pmp::default();
         assert!(p.allows(0x8000_0000, 8, Access::Load, Mode::Machine));
         assert!(!p.allows(0x8000_0000, 8, Access::Load, Mode::Supervisor));
     }
 
     #[test]
     fn a_napot_entry_of_all_ones_covers_all_memory() {
-        let p = all_memory();
+        let mut p = all_memory();
         assert!(p.allows(0, 1, Access::Fetch, Mode::User));
         assert!(p.allows((1 << 56) - 8, 8, Access::Store, Mode::Supervisor));
     }
@@ -196,6 +267,32 @@ mod tests {
         let mut p = Pmp::default();
         p.write_cfg(0, u64::from(W));
         assert_eq!(p.read_cfg(0), 0);
+    }
+
+    #[test]
+    fn a_cached_decision_does_not_leak_into_an_earlier_entry() {
+        let mut p = all_memory();
+        // Entry 0 covers 4 KiB with no rights, inside entry 1 with all.
+        p.write_addr(1, u64::MAX);
+        p.write_addr(0, (0x8000_0000 >> 2) | 0x1ff);
+        p.write_cfg(
+            0,
+            u64::from(NAPOT << A_SHIFT) | (u64::from(R | W | X | NAPOT << A_SHIFT) << 8),
+        );
+        // An access below entry 0 fills the cache from entry 1.
+        assert!(p.allows(0x7fff_f000, 4, Access::Load, Mode::Supervisor));
+        // An access in entry 0 must still be refused.
+        assert!(!p.allows(0x8000_0010, 4, Access::Load, Mode::Supervisor));
+        assert!(p.allows(0x8000_1000, 4, Access::Load, Mode::Supervisor));
+        assert!(!p.allows(0x8000_0ff0, 4, Access::Load, Mode::Supervisor));
+    }
+
+    #[test]
+    fn a_write_clears_the_cache() {
+        let mut p = all_memory();
+        assert!(p.allows(0x1000, 4, Access::Load, Mode::User));
+        p.write_cfg(0, 0);
+        assert!(!p.allows(0x1000, 4, Access::Load, Mode::User));
     }
 
     #[test]
