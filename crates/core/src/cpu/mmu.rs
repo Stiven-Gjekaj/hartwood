@@ -31,6 +31,9 @@ const PTE_RESERVED: u64 = 0x3ff << 54;
 /// The number of entries in the TLB.
 const TLB_SIZE: usize = 256;
 
+/// The 27 bits of the virtual page number of Sv39.
+const VPN_MASK: u64 = (1 << 27) - 1;
+
 /// One cached translation of a 4 KiB virtual page.
 #[derive(Debug, Clone, Copy, Default)]
 struct TlbEntry {
@@ -84,9 +87,11 @@ impl Tlb {
         }
     }
 
-    /// Removes the translation of one virtual address.
+    /// Removes the translation of one virtual address. The page number has
+    /// the same 27 bits as in [`Cpu::translate`], so an address in the
+    /// upper half, with bits 63..39 set, finds its entry too.
     pub fn flush_page(&mut self, vaddr: u64) {
-        let vpn = vaddr >> 12;
+        let vpn = (vaddr >> 12) & VPN_MASK;
         let e = &mut self.entries[Self::index(vpn)];
         if e.vpn == vpn {
             e.valid = false;
@@ -132,7 +137,7 @@ impl Cpu {
             return Err(page_fault(access, vaddr));
         }
 
-        let vpn = (vaddr >> 12) & ((1 << 27) - 1);
+        let vpn = (vaddr >> 12) & VPN_MASK;
         let entry = match self.tlb.lookup(vpn) {
             // A store to a page that is not dirty walks again, so that the
             // walk sets D in memory.
@@ -241,7 +246,7 @@ impl Cpu {
             let page = ((ppn & !low_ppn_mask) | (vpn & low_ppn_mask)) * PAGE_SIZE;
             return Ok(TlbEntry {
                 valid: true,
-                vpn: vpn & ((1 << 27) - 1),
+                vpn: vpn & VPN_MASK,
                 page,
                 flags: new_pte & 0xff,
             });

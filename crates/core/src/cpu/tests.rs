@@ -342,3 +342,18 @@ fn a_breakpoint_stops_before_its_instruction() {
     );
     assert_eq!(cpu.x[7], 3);
 }
+
+#[test]
+fn sfence_vma_with_an_address_flushes_a_kernel_half_page() {
+    // A virtual address in the upper half, where Linux keeps its fixmap.
+    let va = 0xffff_ffff_c000_0000;
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, va, RAM_BASE + 0x3000, R);
+    cpu.bus.write(RAM_BASE + 0x4000, 8, 7).unwrap();
+    assert_eq!(cpu.load(va, 8), Ok(0));
+    cpu.bus
+        .write(pte, 8, (((RAM_BASE + 0x4000) >> 12) << 10) | R | A | 1)
+        .unwrap();
+    cpu.tlb.flush_page(va);
+    assert_eq!(cpu.load(va, 8), Ok(7));
+}
