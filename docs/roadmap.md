@@ -28,7 +28,7 @@ flowchart LR
 |---|---|---|
 | M0 | Done | A test program exits with the code that it writes to `tohost`. |
 | M1 | Done | Each `rv64ui-p-*` test passes. |
-| M2 | Not started | Each `rv64um-p-*`, `rv64ua-p-*` and `rv64uc-p-*` test passes. |
+| M2 | Done | Each `rv64um-p-*`, `rv64ua-p-*` and `rv64uc-p-*` test passes. |
 | M3 | Not started | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
 | M4 | Not started | The `-v-` form of each test above passes. |
 | M5 | Not started | Each `rv64uf-*` and `rv64ud-*` test passes. |
@@ -74,6 +74,11 @@ instructions, which the decoder expands.
 
 Exit test: `hartwood-testsuite rv64um-p- rv64ua-p- rv64uc-p-` reports no
 failure.
+
+Status: done on 2026-11-13. 13 of 13 `rv64um-p`, 19 of 19 `rv64ua-p` and 1
+of 1 `rv64uc-p` tests pass, and the 54 `rv64ui-p` tests still pass. 58 unit
+and integration tests pass. Each pair in the test of the compressed decoder
+comes from `riscv64-elf-as`.
 
 ## M3: Zicsr, Zifencei and the privilege levels
 
