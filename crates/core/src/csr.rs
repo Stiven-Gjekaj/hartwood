@@ -45,6 +45,7 @@ pub const SEPC: u16 = 0x141;
 pub const SCAUSE: u16 = 0x142;
 pub const STVAL: u16 = 0x143;
 pub const SIP: u16 = 0x144;
+pub const STIMECMP: u16 = 0x14d;
 pub const SATP: u16 = 0x180;
 pub const MSTATUS: u16 = 0x300;
 pub const MISA: u16 = 0x301;
@@ -141,6 +142,10 @@ const DELEGABLE_EXCEPTIONS: u64 = 0xffff & !(1 << 11) & !(1 << 10) & !(1 << 14);
 /// the other bits.
 const MIP_WRITABLE: u64 = (1 << 1) | (1 << 5) | (1 << 9);
 
+/// menvcfg.STCE: the Sstc extension is on, so `stimecmp` drives the timer
+/// interrupt of S-mode.
+pub const MENVCFG_STCE: u64 = 1 << 63;
+
 /// The interrupt bits that exist.
 const INTERRUPT_BITS: u64 = 0xaaa;
 
@@ -174,6 +179,8 @@ pub struct Csr {
     pub mcause: u64,
     pub mtval: u64,
     pub stvec: u64,
+    /// The compare value of the Sstc timer of S-mode.
+    pub stimecmp: u64,
     pub scounteren: u64,
     pub senvcfg: u64,
     pub sscratch: u64,
@@ -193,13 +200,20 @@ impl Csr {
         Self {
             // UXL and SXL say that U-mode and S-mode are 64-bit.
             mstatus: (2 << 32) | (2 << 34),
+            stimecmp: u64::MAX,
             ..Self::default()
         }
     }
 
-    /// The value of `mip`: the software bits and the device bits.
+    /// The value of `mip`: the software bits and the device bits. With
+    /// Sstc on, STIP comes from `stimecmp` only.
     pub fn mip(&self) -> u64 {
-        self.mip_soft | self.mip_hard
+        let soft = if self.menvcfg & MENVCFG_STCE != 0 {
+            self.mip_soft & !Interrupt::SupervisorTimer.bit()
+        } else {
+            self.mip_soft
+        };
+        soft | self.mip_hard
     }
 
     /// Sets or clears one interrupt bit that a device drives.
@@ -228,6 +242,10 @@ impl Csr {
         }
         // satp traps in S-mode when mstatus.TVM is set.
         if addr == SATP && ctx.mode == Mode::Supervisor && self.mstatus & MSTATUS_TVM != 0 {
+            return false;
+        }
+        // stimecmp traps in S-mode until M-mode turns Sstc on.
+        if addr == STIMECMP && ctx.mode < Mode::Machine && self.menvcfg & MENVCFG_STCE == 0 {
             return false;
         }
         // The F registers trap when mstatus.FS is off.
@@ -262,6 +280,7 @@ impl Csr {
             SSTATUS => self.sstatus(),
             SIE => self.mie & self.mideleg,
             STVEC => self.stvec,
+            STIMECMP => self.stimecmp,
             SCOUNTEREN => self.scounteren,
             SENVCFG => self.senvcfg,
             SSCRATCH => self.sscratch,
@@ -324,6 +343,7 @@ impl Csr {
             }
             SIE => self.mie = (self.mie & !self.mideleg) | (value & self.mideleg),
             STVEC => self.stvec = legal_tvec(value),
+            STIMECMP => self.stimecmp = value,
             SCOUNTEREN => self.scounteren = value & 0xffff_ffff,
             SENVCFG => self.senvcfg = 0,
             SSCRATCH => self.sscratch = value,
@@ -349,7 +369,8 @@ impl Csr {
             MIE => self.mie = value & INTERRUPT_BITS,
             MTVEC => self.mtvec = legal_tvec(value),
             MCOUNTEREN => self.mcounteren = value & 0xffff_ffff,
-            MENVCFG => self.menvcfg = 0,
+            // Only STCE is writable. hartwood has none of the other fields.
+            MENVCFG => self.menvcfg = value & MENVCFG_STCE,
             MSCRATCH => self.mscratch = value,
             MEPC => self.mepc = value & !1,
             MCAUSE => self.mcause = value,
@@ -495,6 +516,25 @@ mod tests {
         csr.write(SCOUNTEREN, 1);
         assert!(csr.accessible(CYCLE, &ctx(Mode::User), false));
         assert_eq!(csr.read(CYCLE, &ctx(Mode::User)), Some(7));
+    }
+
+    #[test]
+    fn stimecmp_needs_stce_below_machine_mode() {
+        let mut csr = Csr::new();
+        assert!(!csr.accessible(STIMECMP, &ctx(Mode::Supervisor), true));
+        assert!(csr.accessible(STIMECMP, &ctx(Mode::Machine), true));
+        csr.write(MENVCFG, u64::MAX);
+        assert_eq!(csr.menvcfg, MENVCFG_STCE);
+        assert!(csr.accessible(STIMECMP, &ctx(Mode::Supervisor), true));
+    }
+
+    #[test]
+    fn with_sstc_on_software_cannot_set_stip() {
+        let mut csr = Csr::new();
+        csr.write(MIP, 1 << 5);
+        assert_eq!(csr.mip(), 1 << 5);
+        csr.write(MENVCFG, MENVCFG_STCE);
+        assert_eq!(csr.mip(), 0);
     }
 
     #[test]
