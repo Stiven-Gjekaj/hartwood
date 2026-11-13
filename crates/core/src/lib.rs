@@ -6,4 +6,5 @@
 //! devices write. The same core builds for a native host and for
 //! `wasm32-unknown-unknown`.
 
+pub mod elf;
 pub mod ram;
