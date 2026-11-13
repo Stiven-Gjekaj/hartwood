@@ -18,9 +18,11 @@ fn csrrs(rd: u32, csr: u16, rs1: u32) -> u32 {
 }
 
 /// Makes a hart with `code` at the base of RAM, and the program counter
-/// there.
+/// there. PMP entry 0 gives all memory to each mode, as firmware does.
 fn cpu_with(code: &[u32]) -> Cpu {
     let mut cpu = Cpu::new(Bus::new(0x1_0000));
+    cpu.csr.write(crate::csr::PMPADDR0, u64::MAX);
+    cpu.csr.write(crate::csr::PMPCFG0, 0x1f);
     cpu.bus.load_bytes(RAM_BASE, &program(code)).unwrap();
     cpu.pc = RAM_BASE;
     cpu
@@ -139,4 +141,14 @@ fn csrrs_with_x0_does_not_write_a_read_only_csr() {
     // csrrs with rs1 = x5 writes, so it traps, even though x5 is zero.
     assert_eq!(cpu.csr.mcause, 2);
     let _ = (MEPC, MCAUSE, MTVAL, MTVEC);
+}
+
+#[test]
+fn user_mode_with_no_pmp_entry_gets_an_access_fault() {
+    let mut cpu = cpu_with(&[addi(5, 0, 1)]);
+    cpu.csr.write(crate::csr::PMPCFG0, 0);
+    cpu.mode = Mode::User;
+    cpu.step();
+    assert_eq!(cpu.csr.mcause, 1);
+    assert_eq!(cpu.x[5], 0);
 }

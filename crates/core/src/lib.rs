@@ -14,5 +14,6 @@ pub mod csr;
 pub mod decode;
 pub mod elf;
 pub mod htif;
+pub mod pmp;
 pub mod ram;
 pub mod trap;

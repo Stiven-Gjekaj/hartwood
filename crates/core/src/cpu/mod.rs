@@ -5,8 +5,8 @@ mod exec;
 
 use crate::bus::{Bus, BusFault};
 use crate::csr::{
-    Csr, CsrContext, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT, MSTATUS_SIE,
-    MSTATUS_SPIE, MSTATUS_SPP, Mode,
+    Csr, CsrContext, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT, MSTATUS_MPRV,
+    MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP, Mode,
 };
 use crate::decode::{Instruction, decode, decode_compressed};
 use crate::elf::Elf;
@@ -118,6 +118,9 @@ impl Cpu {
 
     fn fetch_half(&mut self, vaddr: u64) -> Result<u16, Exception> {
         let paddr = self.translate(vaddr, Access::Fetch)?;
+        if !self.pmp_allows(paddr, 2, Access::Fetch) {
+            return Err(Exception::InstructionAccessFault(vaddr));
+        }
         self.bus
             .read(paddr, 2)
             .map(|v| v as u16)
@@ -136,12 +139,38 @@ impl Cpu {
         if !vaddr.is_multiple_of(width as u64) {
             return Err(Exception::StoreAddressMisaligned(vaddr));
         }
-        self.translate(vaddr, Access::Store)
+        let paddr = self.translate(vaddr, Access::Store)?;
+        if !self.pmp_allows(paddr, width, Access::Store) {
+            return Err(Exception::StoreAccessFault(vaddr));
+        }
+        Ok(paddr)
+    }
+
+    /// The privilege mode that a load or a store uses: the mode in MPP when
+    /// `mstatus.MPRV` is set in M-mode, and the current mode otherwise.
+    pub(crate) fn data_mode(&self) -> Mode {
+        if self.mode == Mode::Machine && self.csr.mstatus & MSTATUS_MPRV != 0 {
+            self.csr.mpp()
+        } else {
+            self.mode
+        }
+    }
+
+    /// Asks the PMP if an access to a physical address is allowed.
+    pub(crate) fn pmp_allows(&self, paddr: u64, width: usize, access: Access) -> bool {
+        let mode = match access {
+            Access::Fetch => self.mode,
+            _ => self.data_mode(),
+        };
+        self.csr.pmp.allows(paddr, width as u64, access, mode)
     }
 
     /// Reads `width` bytes at a virtual address.
     pub(crate) fn load(&mut self, vaddr: u64, width: usize) -> Result<u64, Exception> {
         let paddr = self.translate(vaddr, Access::Load)?;
+        if !self.pmp_allows(paddr, width, Access::Load) {
+            return Err(Exception::LoadAccessFault(vaddr));
+        }
         self.bus
             .read(paddr, width)
             .map_err(|_| Exception::LoadAccessFault(vaddr))
@@ -150,6 +179,9 @@ impl Cpu {
     /// Writes `width` bytes at a virtual address.
     pub(crate) fn store(&mut self, vaddr: u64, width: usize, value: u64) -> Result<(), Exception> {
         let paddr = self.translate(vaddr, Access::Store)?;
+        if !self.pmp_allows(paddr, width, Access::Store) {
+            return Err(Exception::StoreAccessFault(vaddr));
+        }
         self.bus
             .write(paddr, width, value)
             .map_err(|_| Exception::StoreAccessFault(vaddr))

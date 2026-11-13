@@ -172,6 +172,9 @@ impl Cpu {
                     return Err(Exception::LoadAddressMisaligned(rs1));
                 }
                 let paddr = self.translate(rs1, Access::Load)?;
+                if !self.pmp_allows(paddr, width, Access::Load) {
+                    return Err(Exception::LoadAccessFault(rs1));
+                }
                 let v = self
                     .bus
                     .read(paddr, width)

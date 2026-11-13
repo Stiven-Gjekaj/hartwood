@@ -5,6 +5,7 @@
 //! and `sip` are views of `mstatus`, `mie` and `mip`, so they have no field
 //! of their own.
 
+use crate::pmp::Pmp;
 use crate::trap::Interrupt;
 
 /// The privilege level of the hart.
@@ -66,6 +67,8 @@ pub const MARCHID: u16 = 0xf12;
 pub const MIMPID: u16 = 0xf13;
 pub const MHARTID: u16 = 0xf14;
 pub const MCONFIGPTR: u16 = 0xf15;
+pub const PMPCFG0: u16 = 0x3a0;
+pub const PMPADDR0: u16 = 0x3b0;
 
 // The bits of mstatus.
 pub const MSTATUS_SIE: u64 = 1 << 1;
@@ -144,7 +147,7 @@ const INTERRUPT_BITS: u64 = 0xaaa;
 /// What a CSR access needs, other than the CSR file.
 pub struct CsrContext {
     pub mode: Mode,
-    /// The number of instructions that retired, for `cycle` and `instret`.
+    /// The number of instructions that retired, for `instret`.
     pub instret: u64,
     /// The value of `mtime`, for `time`.
     pub time: u64,
@@ -176,6 +179,7 @@ pub struct Csr {
     pub scause: u64,
     pub stval: u64,
     pub satp: u64,
+    pub pmp: Pmp,
     /// The accrued exception flags of the FPU, five bits.
     pub fflags: u64,
     /// The dynamic rounding mode of the FPU, three bits.
@@ -277,9 +281,14 @@ impl Csr {
             MCAUSE => self.mcause,
             MTVAL => self.mtval,
             MIP => self.mip(),
-            // hartwood has no PMP. The registers read as zero, and a write
-            // does nothing, as the specification allows.
-            0x3a0..=0x3ef => 0,
+            // RV64 has only the even pmpcfg registers. hartwood has 16
+            // entries, so pmpcfg0 and pmpcfg2 hold them all, and the other
+            // even registers and pmpaddr16 to pmpaddr63 read as zero.
+            0x3a0..=0x3af if addr % 2 == 1 => return None,
+            0x3a0 | 0x3a2 => self.pmp.read_cfg(usize::from(addr - PMPCFG0)),
+            0x3a4..=0x3af => 0,
+            0x3b0..=0x3bf => self.pmp.read_addr(usize::from(addr - PMPADDR0)),
+            0x3c0..=0x3ef => 0,
             MVENDORID | MARCHID | MIMPID | MHARTID | MCONFIGPTR => 0,
             _ => return None,
         };
@@ -340,6 +349,8 @@ impl Csr {
             MCAUSE => self.mcause = value,
             MTVAL => self.mtval = value,
             MIP => self.mip_soft = (self.mip_soft & !MIP_WRITABLE) | (value & MIP_WRITABLE),
+            0x3a0 | 0x3a2 => self.pmp.write_cfg(usize::from(addr - PMPCFG0), value),
+            0x3b0..=0x3bf => self.pmp.write_addr(usize::from(addr - PMPADDR0), value),
             _ => {}
         }
     }
