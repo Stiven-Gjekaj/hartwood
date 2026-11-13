@@ -17,6 +17,7 @@ hartwood-core = { path = "crates/core" }
 anyhow = "=1.0.104"
 clap = { version = "=4.6.7", features = ["derive"] }
 crossterm = "=0.29.0"
+wasm-bindgen = "=0.2.130"
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

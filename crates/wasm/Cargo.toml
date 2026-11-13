@@ -1,0 +1,20 @@
+[package]
+name = "hartwood-wasm"
+description = "The WebAssembly bindings of hartwood for the web frontend."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hartwood-core.workspace = true
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true
