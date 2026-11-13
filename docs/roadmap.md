@@ -33,9 +33,9 @@ flowchart LR
 | M4 | Done | The `-v-` form of each test above passes. |
 | M5 | Done | Each `rv64uf-*` and `rv64ud-*` test passes. |
 | M6 | Done | xv6 boots to its shell, and `usertests` passes. |
-| M7 | Not started | Linux boots to a BusyBox shell. |
-| M8 | Not started | Linux boots in the browser, and the debugger works on xv6. |
-| M9 | Not started | The README has the benchmarks and the demo is on GitHub Pages. |
+| M7 | In progress | Linux boots to a BusyBox shell. |
+| M8 | In progress | Linux boots in the browser, and the debugger works on xv6. |
+| M9 | In progress | The README has the benchmarks and the demo is on GitHub Pages. |
 
 ---
 
@@ -156,6 +156,18 @@ device tree of M6. The build scripts are in `scripts/`.
 Exit test: Linux boots to a BusyBox shell, and `uname -a`, `ls /` and
 `cat /proc/cpuinfo` work.
 
+Status on 2026-11-13: not done.
+
+- OpenSBI 1.9 boots, and starts Linux 6.18.63. Linux reaches `/init` in
+  70.6 million steps.
+- The first boot looped on a page fault. The cause: `sfence.vma` with an
+  address in the upper half flushed nothing, so Linux wrote its page
+  tables through a stale fixmap entry. Fixed, with a test.
+- BusyBox then stops on `vsetvli`. QEMU stops on the same instruction, so
+  the fault is in the image: the compiler of `ubuntu-latest` targets RVA23,
+  and its C library has vector code. The Linux build now runs on Ubuntu
+  24.04. The CI run that checks this was still running when work stopped.
+
 ## M8: the web frontend
 
 Work: the WASM bindings, a Vite and TypeScript page with an xterm.js
@@ -166,6 +178,13 @@ Web Worker.
 Exit test: Linux boots in the browser to a shell, and the debugger works on
 xv6.
 
+Status on 2026-11-13: not done. The page, the worker and the bindings are
+built. On xv6 in the browser, a breakpoint on `main` stops after 68
+instructions, a step moves the PC by one instruction, the memory view
+shows the bytes at `main`, and Run continues. Linux in the browser waits
+for M7. The Pages workflow is ready and Pages is on, but it has not
+deployed yet.
+
 ## M9: speed and polish
 
 Work: a profile first, then a cache of decoded instructions and fast paths
@@ -175,3 +194,9 @@ site.
 Exit test: the README has the architecture diagram, the table of test
 results, the benchmarks, a recording of the boot in the browser, and the
 design decisions. The demo is on GitHub Pages.
+
+Status on 2026-11-13: not done. A profile came first (D26). Four changes
+took the boot of xv6 with `ls` (441.4 million steps) from 29.8 to about 51
+million steps a second, in wall time on a loaded machine. The numbers for
+the README must come from a quiet machine. The README, the recording and
+the release are still to do.
