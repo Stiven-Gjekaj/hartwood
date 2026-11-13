@@ -1,0 +1,88 @@
+# Builds the web frontend and puts it on GitHub Pages, after the images
+# workflow built and booted the images on main.
+#
+# The site takes its boot images from the artifacts of that run, so the
+# site boots the same images that CI booted.
+
+name: pages
+
+on:
+  workflow_run:
+    workflows: [images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the site
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install wasm-pack
+        run: |
+          curl -fsSL https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz --strip-components=1 -C /usr/local/bin wasm-pack-v0.15.1-x86_64-unknown-linux-musl/wasm-pack
+          wasm-pack --version
+
+      # The images of the last good run of the images workflow on main.
+      - name: download the images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RUN_ID}" ]; then
+            RUN_ID=$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow images.yml --branch main \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          fi
+          gh run download "${RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name xv6 --dir web/public/images/xv6
+          gh run download "${RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name linux --dir web/public/images/linux
+          ls -lR web/public/images
+
+      - name: build
+        working-directory: web
+        run: |
+          npm ci
+          npm run wasm
+          npm run build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: web/dist
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
