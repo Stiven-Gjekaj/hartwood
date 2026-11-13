@@ -7,8 +7,12 @@
 //! `wasm32-unknown-unknown`.
 
 pub mod bus;
+pub mod cpu;
 pub mod decode;
 pub mod elf;
 pub mod htif;
 pub mod ram;
 pub mod trap;
+
+#[cfg(any(test, feature = "test-util"))]
+pub mod asm;
