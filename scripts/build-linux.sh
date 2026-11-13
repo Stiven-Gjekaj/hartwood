@@ -85,6 +85,9 @@ sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' "$BUSYBOX/.config"
 # The traffic control applet does not build with the headers of new
 # kernels, and a shell does not need it.
 sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' "$BUSYBOX/.config"
+# The SHA code for the instructions of x86 does not build for RISC-V.
+sed -i 's/^CONFIG_SHA1_HWACCEL=y/# CONFIG_SHA1_HWACCEL is not set/' "$BUSYBOX/.config"
+sed -i 's/^CONFIG_SHA256_HWACCEL=y/# CONFIG_SHA256_HWACCEL is not set/' "$BUSYBOX/.config"
 make -C "$BUSYBOX" CROSS_COMPILE="$CROSS" oldconfig </dev/null >/dev/null
 make -C "$BUSYBOX" CROSS_COMPILE="$CROSS" -j"$JOBS" >/dev/null
 
