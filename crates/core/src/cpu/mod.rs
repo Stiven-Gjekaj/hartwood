@@ -9,20 +9,27 @@ pub use mmu::Tlb;
 
 use crate::bus::{Bus, BusFault};
 use crate::csr::{
-    Csr, CsrContext, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT, MSTATUS_MPRV,
-    MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP, Mode,
+    Csr, CsrContext, MENVCFG_STCE, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT,
+    MSTATUS_MPRV, MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP, Mode,
 };
 use crate::decode::{Instruction, decode, decode_compressed};
+use crate::devices::syscon::Request;
 use crate::elf::Elf;
 use crate::trap::{Exception, Interrupt, Trap};
 
 /// Why [`Cpu::run`] returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stop {
-    /// The program wrote an exit code to `tohost`.
+    /// The program wrote an exit code to `tohost`, or turned the machine
+    /// off with this code.
     Exit(u64),
+    /// The program asked for a reset.
+    Reset,
     /// The CPU ran the number of instructions that the caller allowed.
     StepLimit,
+    /// The hart waits in `wfi`, and no timer will wake it. Only input from
+    /// the host can.
+    Idle,
 }
 
 /// The kind of a memory access, for the MMU and for the fault that it
@@ -49,6 +56,8 @@ pub struct Cpu {
     /// The number of steps: each instruction and each trap. hartwood counts
     /// one cycle for each step.
     pub cycle: u64,
+    /// The hart waits in `wfi` for an interrupt.
+    pub waiting: bool,
     /// The physical address that `lr` reserved, until an `sc` or a trap.
     pub reservation: Option<u64>,
     pub tlb: Tlb,
@@ -67,6 +76,7 @@ impl Cpu {
             csr: Csr::new(),
             instret: 0,
             cycle: 0,
+            waiting: false,
             reservation: None,
             tlb: Tlb::default(),
             bus,
@@ -93,17 +103,81 @@ impl Cpu {
     /// instructions.
     pub fn run(&mut self, max_steps: u64) -> Stop {
         for _ in 0..max_steps {
+            if self.waiting && !self.wake() {
+                return Stop::Idle;
+            }
             self.step();
             if let Some(code) = self.bus.htif.exit_code {
                 return Stop::Exit(code);
+            }
+            if let Some(request) = self.bus.syscon.request {
+                return match request {
+                    Request::PowerOff(code) => Stop::Exit(code),
+                    Request::Reset => Stop::Reset,
+                };
             }
         }
         Stop::StepLimit
     }
 
+    /// Ends a `wfi` if an interrupt is pending, or moves the time forward to
+    /// the next timer event. Gives `false` if nothing but the host can wake
+    /// the hart.
+    ///
+    /// The time jumps, and does not tick one step at a time, because a hart
+    /// that waits does nothing that a program can see. This makes an idle
+    /// system cost nothing, and keeps the run the same on each host.
+    fn wake(&mut self) -> bool {
+        self.update_interrupt_lines();
+        if self.csr.mip() & self.csr.mie == 0 {
+            let now = self.bus.clint.mtime;
+            let mut next = u64::MAX;
+            if self.bus.clint.mtimecmp > now {
+                next = next.min(self.bus.clint.mtimecmp);
+            }
+            if self.csr.menvcfg & MENVCFG_STCE != 0 && self.csr.stimecmp > now {
+                next = next.min(self.csr.stimecmp);
+            }
+            if next == u64::MAX {
+                return false;
+            }
+            self.bus.clint.mtime = next;
+            self.update_interrupt_lines();
+            if self.csr.mip() & self.csr.mie == 0 {
+                return false;
+            }
+        }
+        self.waiting = false;
+        true
+    }
+
+    /// Copies the lines of the devices into `mip`: the timer and the
+    /// software interrupt of the CLINT, the Sstc timer, and the two outputs
+    /// of the PLIC.
+    fn update_interrupt_lines(&mut self) {
+        let clint = &self.bus.clint;
+        let sstc = self.csr.menvcfg & MENVCFG_STCE != 0;
+        let lines = [
+            (Interrupt::MachineTimer, clint.timer_pending()),
+            (Interrupt::MachineSoftware, clint.msip),
+            (Interrupt::MachineExternal, self.bus.external[0]),
+            (Interrupt::SupervisorExternal, self.bus.external[1]),
+            (
+                Interrupt::SupervisorTimer,
+                sstc && clint.mtime >= self.csr.stimecmp,
+            ),
+        ];
+        for (irq, on) in lines {
+            self.csr.set_pending(irq, on);
+        }
+    }
+
     /// Takes a pending interrupt, or runs one instruction. An exception in
-    /// the instruction becomes a trap.
+    /// the instruction becomes a trap. Each step moves `mtime` forward by
+    /// one.
     pub fn step(&mut self) {
+        self.update_interrupt_lines();
+        self.bus.clint.mtime = self.bus.clint.mtime.wrapping_add(1);
         if let Some(irq) = self.pending_interrupt() {
             self.take_trap(Trap::Interrupt(irq));
         } else {
@@ -282,7 +356,7 @@ impl Cpu {
             mode: self.mode,
             cycle: self.cycle,
             instret: self.instret,
-            time: 0,
+            time: self.bus.clint.mtime,
         }
     }
 

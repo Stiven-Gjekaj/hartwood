@@ -269,6 +269,7 @@ impl Cpu {
                 if self.mode == Mode::User || (self.mode == Mode::Supervisor && tw) {
                     return Err(illegal);
                 }
+                self.waiting = true;
             }
             Op::SfenceVma => {
                 let tvm = self.csr.mstatus & MSTATUS_TVM != 0;

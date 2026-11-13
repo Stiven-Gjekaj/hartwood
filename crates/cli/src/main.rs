@@ -80,6 +80,11 @@ fn run(image: &PathBuf, trace: bool, max_steps: u64, ram_mib: usize) -> Result<E
             eprintln!("hartwood: stopped after {} instructions", cpu.instret);
             Ok(ExitCode::from(124))
         }
+        Stop::Reset => Ok(ExitCode::SUCCESS),
+        Stop::Idle => {
+            eprintln!("hartwood: the hart waits for an interrupt that cannot come");
+            Ok(ExitCode::from(124))
+        }
     }
 }
 

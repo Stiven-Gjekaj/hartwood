@@ -53,7 +53,7 @@ pub fn run_bytes(bytes: &[u8]) -> Outcome {
     match cpu.run(STEP_LIMIT) {
         Stop::Exit(0) => Outcome::Pass,
         Stop::Exit(n) => Outcome::Fail(n),
-        Stop::StepLimit => Outcome::Timeout,
+        Stop::StepLimit | Stop::Idle | Stop::Reset => Outcome::Timeout,
     }
 }
 

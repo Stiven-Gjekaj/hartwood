@@ -109,7 +109,7 @@ fn a_vectored_interrupt_jumps_into_the_table() {
     cpu.csr.mtvec = (RAM_BASE + 0x100) | 1;
     cpu.csr.mie = Interrupt::MachineTimer.bit();
     cpu.csr.mstatus |= MSTATUS_MIE;
-    cpu.csr.set_pending(Interrupt::MachineTimer, true);
+    cpu.bus.clint.mtimecmp = 0;
     cpu.step();
     assert_eq!(cpu.pc, RAM_BASE + 0x100 + 4 * 7);
     assert_eq!(cpu.csr.mcause, (1 << 63) | 7);
@@ -120,7 +120,7 @@ fn a_vectored_interrupt_jumps_into_the_table() {
 fn a_masked_interrupt_does_not_fire_in_its_own_mode() {
     let mut cpu = cpu_with(&[addi(5, 0, 1)]);
     cpu.csr.mie = Interrupt::MachineTimer.bit();
-    cpu.csr.set_pending(Interrupt::MachineTimer, true);
+    cpu.bus.clint.mtimecmp = 0;
     cpu.step();
     assert_eq!(cpu.x[5], 1);
     // In a lower mode, the interrupt for M-mode fires with MIE clear.
@@ -273,4 +273,44 @@ fn a_misaligned_load_reads_across_two_pages() {
     );
     cpu.bus.write(RAM_BASE + 0x3ffc, 4, 0xaabb_ccdd).unwrap();
     assert_eq!(cpu.load(0x4000_0ffc, 4), Ok(0xaabb_ccdd));
+}
+
+const WFI: u32 = 0x1050_0073;
+
+#[test]
+fn wfi_jumps_the_time_to_the_timer() {
+    let mut cpu = cpu_with(&[WFI, addi(5, 0, 1)]);
+    cpu.bus.clint.mtimecmp = 1_000_000;
+    cpu.csr.mie = Interrupt::MachineTimer.bit();
+    cpu.csr.mtvec = RAM_BASE + 0x100;
+    // MIE is clear, so the hart wakes but takes no trap.
+    assert_eq!(cpu.run(2), Stop::StepLimit);
+    assert_eq!(cpu.x[5], 1);
+    assert!(cpu.bus.clint.mtime >= 1_000_000);
+}
+
+#[test]
+fn wfi_with_no_timer_is_idle_until_input() {
+    let mut cpu = cpu_with(&[WFI, addi(5, 0, 1)]);
+    cpu.csr.mie = Interrupt::MachineExternal.bit();
+    assert_eq!(cpu.run(10), Stop::Idle);
+    assert_eq!(cpu.x[5], 0);
+    // A UART byte through the PLIC to context 0 wakes the hart.
+    cpu.bus.write(crate::bus::PLIC_BASE + 40, 4, 1).unwrap();
+    cpu.bus
+        .write(crate::bus::PLIC_BASE + 0x2000, 4, 1 << 10)
+        .unwrap();
+    cpu.bus.write(crate::bus::UART_BASE + 1, 1, 1).unwrap();
+    cpu.bus.push_input(b"k");
+    assert_eq!(cpu.run(1), Stop::StepLimit);
+    assert_eq!(cpu.x[5], 1);
+}
+
+#[test]
+fn the_sstc_timer_raises_stip() {
+    let mut cpu = cpu_with(&[addi(0, 0, 0), addi(0, 0, 0)]);
+    cpu.csr.menvcfg = crate::csr::MENVCFG_STCE;
+    cpu.csr.stimecmp = 1;
+    cpu.run(2);
+    assert_ne!(cpu.csr.mip() & Interrupt::SupervisorTimer.bit(), 0);
 }
