@@ -172,3 +172,17 @@ must be aligned.
 **Reason:** the specification allows both. Linux and OpenSBI can emulate a
 misaligned access in a trap handler, but that path is slow and seldom
 tested. The riscv-tests `ma_data` test accepts both.
+
+## D14: The reservation of LR holds a physical address, and a trap ends it
+
+**Options:** reserve the virtual address or the physical address. End the
+reservation only at an `sc`, or also at a trap.
+
+**Choice:** `lr` keeps the physical address. An `sc` or any trap ends the
+reservation.
+
+**Reason:** two virtual addresses can map one physical address, and the
+reservation is on memory, not on a name for it. With one hart, no other
+hart can break a reservation, so a trap is the event that must: after a
+context switch, the `sc` of the old thread must fail. The specification
+allows an implementation to fail an `sc` for more reasons than it lists.
