@@ -178,22 +178,21 @@ impl Cpu {
     /// Copies the lines of the devices into `mip`: the timer and the
     /// software interrupt of the CLINT, the Sstc timer, and the two outputs
     /// of the PLIC.
+    ///
+    /// Each step calls it, so it builds the bits with no branch and writes
+    /// them with one store.
     fn update_interrupt_lines(&mut self) {
         let clint = &self.bus.clint;
         let sstc = self.csr.menvcfg & MENVCFG_STCE != 0;
-        let lines = [
-            (Interrupt::MachineTimer, clint.timer_pending()),
-            (Interrupt::MachineSoftware, clint.msip),
-            (Interrupt::MachineExternal, self.bus.external[0]),
-            (Interrupt::SupervisorExternal, self.bus.external[1]),
-            (
+        let line = |irq: Interrupt, on: bool| u64::from(on) << (irq as u64);
+        self.csr.mip_hard = line(Interrupt::MachineTimer, clint.timer_pending())
+            | line(Interrupt::MachineSoftware, clint.msip)
+            | line(Interrupt::MachineExternal, self.bus.external[0])
+            | line(Interrupt::SupervisorExternal, self.bus.external[1])
+            | line(
                 Interrupt::SupervisorTimer,
                 sstc && clint.mtime >= self.csr.stimecmp,
-            ),
-        ];
-        for (irq, on) in lines {
-            self.csr.set_pending(irq, on);
-        }
+            );
     }
 
     /// Takes a pending interrupt, or runs one instruction. An exception in
@@ -222,6 +221,18 @@ impl Cpu {
     pub(crate) fn fetch(&mut self) -> Result<Instruction, Exception> {
         let pc = self.pc;
         let paddr = self.translate(pc, Access::Fetch)?;
+        // The fast path: both halves in RAM, on one page, under one PMP
+        // decision. One read of 32 bits gets the instruction.
+        if pc & 0xfff <= 0xffc
+            && self.pmp_allows(paddr, 4, Access::Fetch)
+            && let Some(word) = paddr
+                .checked_sub(crate::bus::RAM_BASE)
+                .and_then(|off| self.bus.ram.read(off, 4))
+        {
+            let word = word as u32;
+            let raw = if word & 3 == 3 { word } else { word & 0xffff };
+            return Ok(self.decode_cache.decode(raw));
+        }
         let low = self.fetch_half(pc, paddr)?;
         if low & 3 != 3 {
             return Ok(self.decode_cache.decode(u32::from(low)));
