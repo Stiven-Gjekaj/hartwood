@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="hartwood">
+  <title>hartwood</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1b22"/>
+      <stop offset="1" stop-color="#09090b"/>
+    </linearGradient>
+    <linearGradient id="grain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f4f5"/>
+      <stop offset="1" stop-color="#a1a1aa"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#tile)"/>
+  <!-- The rings of a cut log: the wood of the name. -->
+  <circle cx="128" cy="128" r="84" fill="#18181b" stroke="#3f3f46" stroke-width="6"/>
+  <circle cx="128" cy="128" r="62" fill="none" stroke="#27272a" stroke-width="5"/>
+  <circle cx="128" cy="128" r="40" fill="none" stroke="#27272a" stroke-width="5"/>
+  <!-- The H of a hart: two pins of a chip and the bus between them. -->
+  <path d="M96 84 V172 M160 84 V172 M96 128 H160" fill="none" stroke="url(#grain)" stroke-width="16" stroke-linecap="round"/>
+</svg>
