@@ -3,7 +3,7 @@
 use super::{Access, Cpu, set_bit};
 use crate::csr::{
     MCYCLE, MINSTRET, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPRV, MSTATUS_SIE,
-    MSTATUS_SPIE, MSTATUS_SPP, MSTATUS_TSR, MSTATUS_TVM, MSTATUS_TW, Mode,
+    MSTATUS_SPIE, MSTATUS_SPP, MSTATUS_TSR, MSTATUS_TVM, MSTATUS_TW, Mode, SATP,
 };
 use crate::decode::{Instruction, Op};
 use crate::trap::Exception;
@@ -275,6 +275,13 @@ impl Cpu {
                 if self.mode == Mode::User || (self.mode == Mode::Supervisor && tvm) {
                     return Err(illegal);
                 }
+                // hartwood has no ASIDs, so rs2 does not matter. rs1 = x0
+                // means each address.
+                if i.rs1 == 0 {
+                    self.tlb.flush();
+                } else {
+                    self.tlb.flush_page(rs1);
+                }
             }
 
             Op::Illegal => return Err(illegal),
@@ -360,6 +367,10 @@ impl Cpu {
             // reads, so the count of this instruction is taken off here. The
             // step adds it back.
             match addr {
+                // A new page table makes each cached translation stale.
+                // Software must run `sfence.vma` too, but a flush here costs
+                // little and protects a program that forgets it.
+                SATP => self.tlb.flush(),
                 MCYCLE => self.cycle = new.wrapping_sub(1),
                 MINSTRET => self.instret = new.wrapping_sub(1),
                 _ => {}

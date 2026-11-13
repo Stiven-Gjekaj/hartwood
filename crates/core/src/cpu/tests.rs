@@ -161,3 +161,116 @@ fn a_write_to_minstret_is_the_next_value_read() {
     cpu.run(2);
     assert_eq!(cpu.x[6], 100);
 }
+
+/// Builds a page table in RAM that maps the virtual page `va` to the
+/// physical page `pa` at level 0, with the leaf flags `flags`. Gives the
+/// address of the leaf PTE. The three tables sit at the start of RAM + 64 KiB.
+fn map_page(cpu: &mut Cpu, va: u64, pa: u64, flags: u64) -> u64 {
+    let root = RAM_BASE + 0x1_0000;
+    let mid = root + 0x1000;
+    let leaf = root + 0x2000;
+    let vpn = |level: u32| (va >> (12 + 9 * level)) & 0x1ff;
+    let pointer = |table: u64| ((table >> 12) << 10) | 1;
+    cpu.bus.write(root + vpn(2) * 8, 8, pointer(mid)).unwrap();
+    cpu.bus.write(mid + vpn(1) * 8, 8, pointer(leaf)).unwrap();
+    let pte_addr = leaf + vpn(0) * 8;
+    cpu.bus
+        .write(pte_addr, 8, ((pa >> 12) << 10) | flags | 1)
+        .unwrap();
+    cpu.csr.satp = (8 << 60) | (root >> 12);
+    pte_addr
+}
+
+/// A hart with 128 KiB of RAM, in S-mode, with PMP open.
+fn supervisor_cpu() -> Cpu {
+    let mut cpu = Cpu::new(Bus::new(0x2_0000));
+    cpu.csr.write(crate::csr::PMPADDR0, u64::MAX);
+    cpu.csr.write(crate::csr::PMPCFG0, 0x1f);
+    cpu.mode = Mode::Supervisor;
+    cpu
+}
+
+const R: u64 = 1 << 1;
+const W: u64 = 1 << 2;
+const U: u64 = 1 << 4;
+const A: u64 = 1 << 6;
+const D: u64 = 1 << 7;
+
+#[test]
+fn a_load_goes_through_the_page_table_and_sets_a() {
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    cpu.bus.write(RAM_BASE + 0x3008, 8, 0x1234).unwrap();
+    assert_eq!(cpu.load(0x4000_0008, 8), Ok(0x1234));
+    let flags = cpu.bus.read(pte, 8).unwrap() & 0xff;
+    assert_eq!(flags & (A | D), A);
+}
+
+#[test]
+fn a_store_sets_d_even_after_a_load_filled_the_tlb() {
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R | W);
+    cpu.load(0x4000_0000, 8).unwrap();
+    cpu.store(0x4000_0000, 8, 5).unwrap();
+    assert_eq!(cpu.bus.read(pte, 8).unwrap() & (A | D), A | D);
+    assert_eq!(cpu.bus.read(RAM_BASE + 0x3000, 8), Ok(5));
+}
+
+#[test]
+fn a_store_to_a_read_only_page_faults_and_leaves_d_clear() {
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    assert_eq!(
+        cpu.store(0x4000_0010, 4, 1),
+        Err(Exception::StorePageFault(0x4000_0010))
+    );
+    assert_eq!(cpu.bus.read(pte, 8).unwrap() & D, 0);
+}
+
+#[test]
+fn supervisor_mode_reads_a_user_page_only_with_sum() {
+    let mut cpu = supervisor_cpu();
+    map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R | U);
+    assert_eq!(
+        cpu.load(0x4000_0000, 4),
+        Err(Exception::LoadPageFault(0x4000_0000))
+    );
+    cpu.csr.mstatus |= crate::csr::MSTATUS_SUM;
+    assert_eq!(cpu.load(0x4000_0000, 4), Ok(0));
+}
+
+#[test]
+fn an_address_that_does_not_copy_bit_38_faults() {
+    let mut cpu = supervisor_cpu();
+    map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    let bad = 0x0000_8000_4000_0000;
+    assert_eq!(cpu.load(bad, 4), Err(Exception::LoadPageFault(bad)));
+}
+
+#[test]
+fn sfence_vma_drops_a_stale_translation() {
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    cpu.bus.write(RAM_BASE + 0x4000, 8, 7).unwrap();
+    assert_eq!(cpu.load(0x4000_0000, 8), Ok(0));
+    // Point the page somewhere else. The TLB still has the old page.
+    cpu.bus
+        .write(pte, 8, (((RAM_BASE + 0x4000) >> 12) << 10) | R | A | 1)
+        .unwrap();
+    assert_eq!(cpu.load(0x4000_0000, 8), Ok(0));
+    cpu.tlb.flush();
+    assert_eq!(cpu.load(0x4000_0000, 8), Ok(7));
+}
+
+#[test]
+fn a_misaligned_load_reads_across_two_pages() {
+    let mut cpu = supervisor_cpu();
+    map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    // The second page has no mapping.
+    assert_eq!(
+        cpu.load(0x4000_0ffe, 4),
+        Err(Exception::LoadPageFault(0x4000_1000))
+    );
+    cpu.bus.write(RAM_BASE + 0x3ffc, 4, 0xaabb_ccdd).unwrap();
+    assert_eq!(cpu.load(0x4000_0ffc, 4), Ok(0xaabb_ccdd));
+}

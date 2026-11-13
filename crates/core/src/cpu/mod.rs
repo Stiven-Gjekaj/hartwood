@@ -2,6 +2,9 @@
 //! decodes and runs one instruction at a time.
 
 mod exec;
+mod mmu;
+
+pub use mmu::Tlb;
 
 use crate::bus::{Bus, BusFault};
 use crate::csr::{
@@ -45,6 +48,7 @@ pub struct Cpu {
     pub cycle: u64,
     /// The physical address that `lr` reserved, until an `sc` or a trap.
     pub reservation: Option<u64>,
+    pub tlb: Tlb,
     pub bus: Bus,
 }
 
@@ -60,6 +64,7 @@ impl Cpu {
             instret: 0,
             cycle: 0,
             reservation: None,
+            tlb: Tlb::default(),
             bus,
         }
     }
@@ -132,12 +137,6 @@ impl Cpu {
             .map_err(|_| Exception::InstructionAccessFault(vaddr))
     }
 
-    /// Turns a virtual address into a physical address. Without the MMU,
-    /// the two are the same.
-    fn translate(&mut self, vaddr: u64, _access: Access) -> Result<u64, Exception> {
-        Ok(vaddr)
-    }
-
     /// Runs an atomic access: checks the alignment, translates the address
     /// as a store, because every AMO writes, and gives the physical address.
     pub(crate) fn atomic_address(&mut self, vaddr: u64, width: usize) -> Result<u64, Exception> {
@@ -172,6 +171,9 @@ impl Cpu {
 
     /// Reads `width` bytes at a virtual address.
     pub(crate) fn load(&mut self, vaddr: u64, width: usize) -> Result<u64, Exception> {
+        if crosses_page(vaddr, width) {
+            return self.load_across_pages(vaddr, width);
+        }
         let paddr = self.translate(vaddr, Access::Load)?;
         if !self.pmp_allows(paddr, width, Access::Load) {
             return Err(Exception::LoadAccessFault(vaddr));
@@ -183,6 +185,9 @@ impl Cpu {
 
     /// Writes `width` bytes at a virtual address.
     pub(crate) fn store(&mut self, vaddr: u64, width: usize, value: u64) -> Result<(), Exception> {
+        if crosses_page(vaddr, width) {
+            return self.store_across_pages(vaddr, width, value);
+        }
         let paddr = self.translate(vaddr, Access::Store)?;
         if !self.pmp_allows(paddr, width, Access::Store) {
             return Err(Exception::StoreAccessFault(vaddr));
@@ -190,6 +195,71 @@ impl Cpu {
         self.bus
             .write(paddr, width, value)
             .map_err(|_| Exception::StoreAccessFault(vaddr))
+    }
+
+    /// Reads a misaligned value that starts on one page and ends on the
+    /// next. Both pages are translated before any byte is read.
+    fn load_across_pages(&mut self, vaddr: u64, width: usize) -> Result<u64, Exception> {
+        let paddrs = self.translate_bytes(vaddr, width, Access::Load)?;
+        let mut value = 0;
+        for (n, paddr) in paddrs.into_iter().enumerate() {
+            let byte = self
+                .bus
+                .read(paddr, 1)
+                .map_err(|_| Exception::LoadAccessFault(vaddr))?;
+            value |= byte << (8 * n);
+        }
+        Ok(value)
+    }
+
+    /// Writes a misaligned value that starts on one page and ends on the
+    /// next. Both pages are translated before any byte is written, so a
+    /// fault on the second page writes nothing.
+    fn store_across_pages(
+        &mut self,
+        vaddr: u64,
+        width: usize,
+        value: u64,
+    ) -> Result<(), Exception> {
+        let paddrs = self.translate_bytes(vaddr, width, Access::Store)?;
+        for (n, paddr) in paddrs.into_iter().enumerate() {
+            self.bus
+                .write(paddr, 1, value >> (8 * n))
+                .map_err(|_| Exception::StoreAccessFault(vaddr))?;
+        }
+        Ok(())
+    }
+
+    /// Gives the physical address of each byte of an access.
+    fn translate_bytes(
+        &mut self,
+        vaddr: u64,
+        width: usize,
+        access: Access,
+    ) -> Result<Vec<u64>, Exception> {
+        let fault = |a: u64| match access {
+            Access::Load => Exception::LoadAccessFault(a),
+            _ => Exception::StoreAccessFault(a),
+        };
+        let first = self.translate(vaddr, access)?;
+        let second_v = (vaddr | 0xfff) + 1;
+        let second = self.translate(second_v, access)?;
+        let split = (second_v - vaddr) as usize;
+        if !self.pmp_allows(first, split, access) {
+            return Err(fault(vaddr));
+        }
+        if !self.pmp_allows(second, width - split, access) {
+            return Err(fault(second_v));
+        }
+        Ok((0..width)
+            .map(|n| {
+                if n < split {
+                    first + n as u64
+                } else {
+                    second + (n - split) as u64
+                }
+            })
+            .collect())
     }
 
     pub(crate) fn reg(&self, r: u8) -> u64 {
@@ -289,6 +359,11 @@ impl Cpu {
             self.mode = Mode::Machine;
         }
     }
+}
+
+/// Tells if an access of `width` bytes at `vaddr` ends on the next page.
+fn crosses_page(vaddr: u64, width: usize) -> bool {
+    (vaddr & 0xfff) + width as u64 > 0x1000
 }
 
 /// Sets or clears the bits of `mask` in `value`.
