@@ -12,7 +12,7 @@ use crate::csr::{
     Csr, CsrContext, MENVCFG_STCE, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT,
     MSTATUS_MPRV, MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP, Mode,
 };
-use crate::decode::{Instruction, decode, decode_compressed};
+use crate::decode::{DecodeCache, Instruction};
 use crate::devices::syscon::Request;
 use crate::elf::Elf;
 use crate::trap::{Exception, Interrupt, Trap};
@@ -64,6 +64,7 @@ pub struct Cpu {
     /// The physical address that `lr` reserved, until an `sc` or a trap.
     pub reservation: Option<u64>,
     pub tlb: Tlb,
+    decode_cache: DecodeCache,
     pub bus: Bus,
 }
 
@@ -82,6 +83,7 @@ impl Cpu {
             waiting: false,
             reservation: None,
             tlb: Tlb::default(),
+            decode_cache: DecodeCache::default(),
             bus,
         }
     }
@@ -215,19 +217,28 @@ impl Cpu {
     ///
     /// The fetch reads 16 bits first. If the two low bits are not `11`, the
     /// instruction is compressed. Otherwise the fetch reads the next 16
-    /// bits, which can be on the next page.
+    /// bits. They are on the same page unless the first half ends a page,
+    /// so the translation of the first half serves both in most cases.
     pub(crate) fn fetch(&mut self) -> Result<Instruction, Exception> {
         let pc = self.pc;
-        let low = self.fetch_half(pc)?;
+        let paddr = self.translate(pc, Access::Fetch)?;
+        let low = self.fetch_half(pc, paddr)?;
         if low & 3 != 3 {
-            return Ok(decode_compressed(low));
+            return Ok(self.decode_cache.decode(u32::from(low)));
         }
-        let high = self.fetch_half(pc.wrapping_add(2))?;
-        Ok(decode((u32::from(high) << 16) | u32::from(low)))
+        let next = pc.wrapping_add(2);
+        let next_paddr = if next & 0xfff == 0 {
+            self.translate(next, Access::Fetch)?
+        } else {
+            paddr + 2
+        };
+        let high = self.fetch_half(next, next_paddr)?;
+        Ok(self
+            .decode_cache
+            .decode((u32::from(high) << 16) | u32::from(low)))
     }
 
-    fn fetch_half(&mut self, vaddr: u64) -> Result<u16, Exception> {
-        let paddr = self.translate(vaddr, Access::Fetch)?;
+    fn fetch_half(&mut self, vaddr: u64, paddr: u64) -> Result<u16, Exception> {
         if !self.pmp_allows(paddr, 2, Access::Fetch) {
             return Err(Exception::InstructionAccessFault(vaddr));
         }
