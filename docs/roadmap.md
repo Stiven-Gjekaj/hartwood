@@ -62,7 +62,7 @@ the CSRs and the trap path that the start code needs.
 
 Exit test: `hartwood-testsuite rv64ui-p-` reports no failure.
 
-Status: done on 2026-11-13. 54 of 54 `rv64ui-p` tests pass, and 72 unit
+Status: done on 2026-11-13. 54 of 54 `rv64ui-p` tests pass, and 50 unit
 and integration tests pass. The same run shows 12 of 17 `rv64mi-p` tests
 and 4 of 7 `rv64si-p` tests that already pass.
 
