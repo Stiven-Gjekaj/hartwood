@@ -10,3 +10,4 @@ pub mod bus;
 pub mod elf;
 pub mod htif;
 pub mod ram;
+pub mod trap;
