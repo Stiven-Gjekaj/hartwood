@@ -237,3 +237,35 @@ permission check passes.
 
 **Reason:** `rv64si-p-dirty` checks that a store sets D. Linux works with
 both. A page fault for each first use of a page makes a boot slower.
+
+## D18: The floating point is a software implementation of its own
+
+**Options:** the host FPU, `softfloat-wrapper` (Berkeley SoftFloat in C),
+the `softfloat` crate, `simple-soft-float`, or a new module.
+
+**Choice:** `crates/core/src/softfloat.rs`. Each operation makes the exact
+result in a `u128` with a sticky bit, and one function rounds it in each of
+the five modes and raises the five flags.
+
+**Reason:**
+
+- The host FPU rounds to nearest only, and Rust gives no portable access to
+  its flags.
+- `softfloat-wrapper` builds C. The browser build then needs a C compiler
+  for `wasm32`.
+- The `softfloat` crate has neither rounding modes nor flags.
+- `simple-soft-float` has its last release in 2019, and it pulls in a big
+  number library.
+
+A `u128` holds the exact product of two doubles (106 bits) with room to
+spare, so add, multiply, divide, square root and the fused multiply-add
+need no wider type. The fused multiply-add aligns the two parts with a
+sticky bit: a large shift happens only when the two exponents are far
+apart, and then at most one bit cancels.
+
+The tests check the module against the host in the one mode that the host
+has: 200 000 random cases for each operation, on doubles and on singles,
+must match bit for bit. A second test checks the directed modes with the
+exact error of each sum (TwoSum): the result must be the neighbour on the
+right side. The riscv-tests `rv64uf` and `rv64ud` suites check the RISC-V
+rules for NaN, the flags and the conversions.
