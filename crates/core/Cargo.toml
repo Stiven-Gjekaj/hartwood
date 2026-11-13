@@ -1,0 +1,19 @@
+[package]
+name = "hartwood-core"
+description = "The CPU, the MMU, the bus and the devices of hartwood. It does no I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The ELF builder and the small assembler that the tests of each crate use.
+test-util = []
+
+[dev-dependencies]
+hartwood-core = { path = ".", features = ["test-util"] }
