@@ -83,4 +83,4 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-unknown-elf
       - run: scripts/build-riscv-tests.sh
       - name: run the suites
-        run: cargo run --release --locked -p hartwood-testsuite -- rv64ui- rv64um- rv64ua- rv64uc- rv64si-p-
+        run: cargo run --release --locked -p hartwood-testsuite -- rv64ui- rv64um- rv64ua- rv64uc- rv64uf- rv64ud- rv64mi-p- rv64si-p-
