@@ -2,5 +2,6 @@
 
 pub mod clint;
 pub mod plic;
+pub mod syscon;
 pub mod uart;
 pub mod virtio;
