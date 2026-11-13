@@ -279,7 +279,7 @@ impl Csr {
             MIP => self.mip(),
             // hartwood has no PMP. The registers read as zero, and a write
             // does nothing, as the specification allows.
-            0x3a0..=0x3af | 0x3b0..=0x3ef => 0,
+            0x3a0..=0x3ef => 0,
             MVENDORID | MARCHID | MIMPID | MHARTID | MCONFIGPTR => 0,
             _ => return None,
         };
