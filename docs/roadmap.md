@@ -29,9 +29,9 @@ flowchart LR
 | M0 | Done | A test program exits with the code that it writes to `tohost`. |
 | M1 | Done | Each `rv64ui-p-*` test passes. |
 | M2 | Done | Each `rv64um-p-*`, `rv64ua-p-*` and `rv64uc-p-*` test passes. |
-| M3 | Done but for one test | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
+| M3 | Done | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
 | M4 | Done | The `-v-` form of each test above passes. |
-| M5 | Not started | Each `rv64uf-*` and `rv64ud-*` test passes. |
+| M5 | Done | Each `rv64uf-*` and `rv64ud-*` test passes. |
 | M6 | Not started | xv6 boots to its shell, and `usertests` passes. |
 | M7 | Not started | Linux boots to a BusyBox shell. |
 | M8 | Not started | Linux boots in the browser, and the debugger works on xv6. |
@@ -90,7 +90,8 @@ Exit test: `hartwood-testsuite rv64mi-p- rv64si-p-` reports no failure.
 Status: 16 of 17 `rv64mi-p` and 7 of 7 `rv64si-p` tests pass. Two of the
 `rv64si-p` tests (`dirty` and `icache-alias`) turn on paging, so they pass
 only with M4. `rv64mi-p-csr` runs `fmv.s.x` to check that a store of a float
-does nothing while `mstatus.FS` is off. It fails until M5 adds F.
+does nothing while `mstatus.FS` is off. It passes since M5 added F, so M3
+is done with 17 of 17.
 M3 also added 16 PMP entries, the trigger CSRs with no trigger, and counters
 that a write can set.
 
@@ -112,6 +113,21 @@ Work: single and double precision, `fcsr`, the rounding modes, the exception
 flags, and NaN boxing. This completes RV64GC.
 
 Exit test: `hartwood-testsuite rv64uf- rv64ud-` reports no failure.
+
+Status: done on 2026-11-13. Each riscv-tests program of RV64GC passes:
+244 of 244, in the `-p-` and the `-v-` forms. 86 unit and integration tests
+pass.
+
+| Suite | `-p-` | `-v-` |
+|---|---|---|
+| rv64ui | 54 / 54 | 54 / 54 |
+| rv64um | 13 / 13 | 13 / 13 |
+| rv64ua | 19 / 19 | 19 / 19 |
+| rv64uc | 1 / 1 | 1 / 1 |
+| rv64uf | 11 / 11 | 11 / 11 |
+| rv64ud | 12 / 12 | 12 / 12 |
+| rv64mi | 17 / 17 | |
+| rv64si | 7 / 7 | |
 
 ## M6: the devices and xv6
 
