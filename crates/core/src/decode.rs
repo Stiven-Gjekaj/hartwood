@@ -6,7 +6,15 @@
 //! the bit work, so the code that runs an instruction reads like the
 //! specification.
 
-/// An operation. Each name is the mnemonic in the specification.
+/// The format of a floating point operation: single or double.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Fp {
+    S,
+    D,
+}
+
+/// An operation. Each name is the mnemonic in the specification. A floating
+/// point operation that exists for both formats carries an [`Fp`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Op {
     // RV64I
@@ -121,6 +129,46 @@ pub enum Op {
     AmominuD,
     AmomaxuD,
 
+    // F and D. `rm` holds the rounding mode, and `rs3` the third source.
+    Flw,
+    Fld,
+    Fsw,
+    Fsd,
+    Fadd(Fp),
+    Fsub(Fp),
+    Fmul(Fp),
+    Fdiv(Fp),
+    Fsqrt(Fp),
+    Fsgnj(Fp),
+    Fsgnjn(Fp),
+    Fsgnjx(Fp),
+    Fmin(Fp),
+    Fmax(Fp),
+    /// `fcvt.w.s` and `fcvt.w.d`: a float to a signed word.
+    FcvtW(Fp),
+    FcvtWu(Fp),
+    FcvtL(Fp),
+    FcvtLu(Fp),
+    /// `fcvt.s.w` and `fcvt.d.w`: a signed word to a float.
+    FcvtFromW(Fp),
+    FcvtFromWu(Fp),
+    FcvtFromL(Fp),
+    FcvtFromLu(Fp),
+    FcvtSD,
+    FcvtDS,
+    /// `fmv.x.w` and `fmv.x.d`.
+    FmvToInt(Fp),
+    /// `fmv.w.x` and `fmv.d.x`.
+    FmvFromInt(Fp),
+    Fclass(Fp),
+    Feq(Fp),
+    Flt(Fp),
+    Fle(Fp),
+    Fmadd(Fp),
+    Fmsub(Fp),
+    Fnmsub(Fp),
+    Fnmadd(Fp),
+
     /// An encoding that names no operation that hartwood implements.
     Illegal,
 }
@@ -132,6 +180,10 @@ pub struct Instruction {
     pub rd: u8,
     pub rs1: u8,
     pub rs2: u8,
+    /// The third source register of a fused multiply-add.
+    pub rs3: u8,
+    /// The rounding mode field of a floating point instruction.
+    pub rm: u8,
     /// The immediate, sign extended to 64 bits.
     pub imm: i64,
     /// The bits of the instruction, for `mtval` and for the disassembler.
@@ -147,6 +199,8 @@ impl Instruction {
             rd: rd(raw),
             rs1: rs1(raw),
             rs2: rs2(raw),
+            rs3: (raw >> 27) as u8,
+            rm: funct3(raw) as u8,
             imm: 0,
             raw,
             len: 4,
@@ -340,8 +394,81 @@ pub fn decode(raw: u32) -> Instruction {
         },
         0b111_0011 => decode_system(raw),
         0b010_1111 => decode_atomic(raw),
+        0b000_0111 => match f3 {
+            0b010 => Instruction::new(Op::Flw, raw).with_imm(imm_i(raw)),
+            0b011 => Instruction::new(Op::Fld, raw).with_imm(imm_i(raw)),
+            _ => illegal,
+        },
+        0b010_0111 => match f3 {
+            0b010 => Instruction::new(Op::Fsw, raw).with_imm(imm_s(raw)),
+            0b011 => Instruction::new(Op::Fsd, raw).with_imm(imm_s(raw)),
+            _ => illegal,
+        },
+        0b100_0011 | 0b100_0111 | 0b100_1011 | 0b100_1111 => {
+            let Some(fp) = fp_format(f7 & 3) else {
+                return illegal;
+            };
+            let op = match opcode {
+                0b100_0011 => Op::Fmadd(fp),
+                0b100_0111 => Op::Fmsub(fp),
+                0b100_1011 => Op::Fnmsub(fp),
+                _ => Op::Fnmadd(fp),
+            };
+            Instruction::new(op, raw)
+        }
+        0b101_0011 => decode_op_fp(raw),
         _ => illegal,
     }
+}
+
+/// The format in the two `fmt` bits: 0 is single, 1 is double.
+fn fp_format(bits: u32) -> Option<Fp> {
+    match bits {
+        0 => Some(Fp::S),
+        1 => Some(Fp::D),
+        _ => None,
+    }
+}
+
+/// Decodes the OP-FP opcode: each floating point operation that is not a
+/// load, a store or a fused multiply-add.
+fn decode_op_fp(raw: u32) -> Instruction {
+    let illegal = Instruction::new(Op::Illegal, raw);
+    let Some(fp) = fp_format(funct7(raw) & 3) else {
+        return illegal;
+    };
+    let rm = funct3(raw);
+    let rs2 = rs2(raw);
+    let op = match (funct7(raw) >> 2, rm, rs2) {
+        (0b00000, _, _) => Op::Fadd(fp),
+        (0b00001, _, _) => Op::Fsub(fp),
+        (0b00010, _, _) => Op::Fmul(fp),
+        (0b00011, _, _) => Op::Fdiv(fp),
+        (0b01011, _, 0) => Op::Fsqrt(fp),
+        (0b00100, 0, _) => Op::Fsgnj(fp),
+        (0b00100, 1, _) => Op::Fsgnjn(fp),
+        (0b00100, 2, _) => Op::Fsgnjx(fp),
+        (0b00101, 0, _) => Op::Fmin(fp),
+        (0b00101, 1, _) => Op::Fmax(fp),
+        (0b11000, _, 0) => Op::FcvtW(fp),
+        (0b11000, _, 1) => Op::FcvtWu(fp),
+        (0b11000, _, 2) => Op::FcvtL(fp),
+        (0b11000, _, 3) => Op::FcvtLu(fp),
+        (0b11010, _, 0) => Op::FcvtFromW(fp),
+        (0b11010, _, 1) => Op::FcvtFromWu(fp),
+        (0b11010, _, 2) => Op::FcvtFromL(fp),
+        (0b11010, _, 3) => Op::FcvtFromLu(fp),
+        (0b01000, _, 1) if fp == Fp::S => Op::FcvtSD,
+        (0b01000, _, 0) if fp == Fp::D => Op::FcvtDS,
+        (0b11100, 0, 0) => Op::FmvToInt(fp),
+        (0b11100, 1, 0) => Op::Fclass(fp),
+        (0b11110, 0, 0) => Op::FmvFromInt(fp),
+        (0b10100, 2, _) => Op::Feq(fp),
+        (0b10100, 1, _) => Op::Flt(fp),
+        (0b10100, 0, _) => Op::Fle(fp),
+        _ => return illegal,
+    };
+    Instruction::new(op, raw)
 }
 
 /// Decodes one 16-bit instruction of the C extension. The result has the
@@ -532,6 +659,25 @@ mod tests {
         assert_eq!((i.raw, i.len), (0x7139, 2));
         let i = decode_compressed(0);
         assert_eq!((i.op, i.raw, i.len), (Op::Illegal, 0, 2));
+    }
+
+    #[test]
+    fn the_f_and_d_extensions_decode() {
+        // fmadd.d fa0, fa1, fa2, fa3, rtz
+        let i = decode(0x6ac5_9543);
+        assert_eq!(i.op, Op::Fmadd(Fp::D));
+        assert_eq!((i.rd, i.rs1, i.rs2, i.rs3, i.rm), (10, 11, 12, 13, 1));
+        // fcvt.lu.s a0, fa1, rup and fcvt.s.d fa0, fa1
+        assert_eq!(decode(0xc035_b553).op, Op::FcvtLu(Fp::S));
+        assert_eq!(decode(0x4015_f553).op, Op::FcvtSD);
+        // fmv.x.d a0, fa1 and fclass.s a0, fa1
+        assert_eq!(decode(0xe205_8553).op, Op::FmvToInt(Fp::D));
+        assert_eq!(decode(0xe005_9553).op, Op::Fclass(Fp::S));
+        // flw fa0, 8(sp)
+        let i = decode(0x0081_2507);
+        assert_eq!((i.op, i.imm), (Op::Flw, 8));
+        // The format 2 (half) is not implemented.
+        assert_eq!(decode(0x04c5_8553).op, Op::Illegal);
     }
 
     #[test]

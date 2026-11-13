@@ -2,6 +2,7 @@
 //! decodes and runs one instruction at a time.
 
 mod exec;
+mod fpu;
 mod mmu;
 
 pub use mmu::Tlb;
@@ -37,6 +38,8 @@ pub enum Access {
 pub struct Cpu {
     /// The integer registers. `x[0]` is always zero.
     pub x: [u64; 32],
+    /// The floating point registers, as raw bits.
+    pub f: [u64; 32],
     /// The address of the next instruction.
     pub pc: u64,
     pub mode: Mode,
@@ -58,6 +61,7 @@ impl Cpu {
     pub fn new(bus: Bus) -> Self {
         Self {
             x: [0; 32],
+            f: [0; 32],
             pc: 0,
             mode: Mode::Machine,
             csr: Csr::new(),

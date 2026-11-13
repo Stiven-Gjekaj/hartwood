@@ -284,6 +284,41 @@ impl Cpu {
                 }
             }
 
+            Op::Flw
+            | Op::Fld
+            | Op::Fsw
+            | Op::Fsd
+            | Op::Fadd(_)
+            | Op::Fsub(_)
+            | Op::Fmul(_)
+            | Op::Fdiv(_)
+            | Op::Fsqrt(_)
+            | Op::Fsgnj(_)
+            | Op::Fsgnjn(_)
+            | Op::Fsgnjx(_)
+            | Op::Fmin(_)
+            | Op::Fmax(_)
+            | Op::FcvtW(_)
+            | Op::FcvtWu(_)
+            | Op::FcvtL(_)
+            | Op::FcvtLu(_)
+            | Op::FcvtFromW(_)
+            | Op::FcvtFromWu(_)
+            | Op::FcvtFromL(_)
+            | Op::FcvtFromLu(_)
+            | Op::FcvtSD
+            | Op::FcvtDS
+            | Op::FmvToInt(_)
+            | Op::FmvFromInt(_)
+            | Op::Fclass(_)
+            | Op::Feq(_)
+            | Op::Flt(_)
+            | Op::Fle(_)
+            | Op::Fmadd(_)
+            | Op::Fmsub(_)
+            | Op::Fnmsub(_)
+            | Op::Fnmadd(_) => self.execute_fp(i)?,
+
             Op::Illegal => return Err(illegal),
         }
         self.pc = next_pc;
