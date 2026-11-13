@@ -249,3 +249,48 @@ impl Cpu {
         Err(page_fault(access, vaddr))
     }
 }
+
+impl Cpu {
+    /// Translates a virtual address for a debugger: no permission check, no
+    /// change to A or D, and no change to the TLB. It uses the mode of the
+    /// hart, and RAM only.
+    pub fn peek_translate(&self, vaddr: u64) -> Option<u64> {
+        if self.mode == Mode::Machine || self.csr.satp >> 60 == 0 {
+            return Some(vaddr);
+        }
+        let mut table = (self.csr.satp & ((1 << 44) - 1)) * PAGE_SIZE;
+        for level in (0..LEVELS).rev() {
+            let index = (vaddr >> (12 + 9 * level)) & 0x1ff;
+            let offset = (table + index * 8).checked_sub(crate::bus::RAM_BASE)?;
+            let pte = self.bus.ram.read(offset, 8)?;
+            if pte & PTE_V == 0 {
+                return None;
+            }
+            let ppn = (pte >> 10) & ((1 << 44) - 1);
+            if pte & (PTE_R | PTE_X) != 0 {
+                let low = (1u64 << (12 + 9 * level)) - 1;
+                return Some(((ppn * PAGE_SIZE) & !low) | (vaddr & low));
+            }
+            table = ppn * PAGE_SIZE;
+        }
+        None
+    }
+
+    /// Reads `len` bytes of RAM for a debugger, at a virtual address when
+    /// `virtual_address` is set. A byte that is not in RAM, or not mapped,
+    /// is `None`.
+    pub fn peek(&self, addr: u64, len: usize, virtual_address: bool) -> Vec<Option<u8>> {
+        (0..len as u64)
+            .map(|n| {
+                let a = addr.wrapping_add(n);
+                let p = if virtual_address {
+                    self.peek_translate(a)?
+                } else {
+                    a
+                };
+                let offset = p.checked_sub(crate::bus::RAM_BASE)?;
+                self.bus.ram.read(offset, 1).map(|b| b as u8)
+            })
+            .collect()
+    }
+}

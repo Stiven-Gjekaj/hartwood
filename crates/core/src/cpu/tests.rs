@@ -314,3 +314,15 @@ fn the_sstc_timer_raises_stip() {
     cpu.run(2);
     assert_ne!(cpu.csr.mip() & Interrupt::SupervisorTimer.bit(), 0);
 }
+
+#[test]
+fn a_peek_reads_through_the_page_table_and_changes_nothing() {
+    let mut cpu = supervisor_cpu();
+    let pte = map_page(&mut cpu, 0x4000_0000, RAM_BASE + 0x3000, R);
+    cpu.bus.write(RAM_BASE + 0x3004, 1, 0x5a).unwrap();
+    assert_eq!(cpu.peek(0x4000_0004, 1, true), vec![Some(0x5a)]);
+    assert_eq!(cpu.peek(0x5000_0000, 1, true), vec![None]);
+    assert_eq!(cpu.peek(RAM_BASE + 0x3004, 1, false), vec![Some(0x5a)]);
+    // The A bit is still clear.
+    assert_eq!(cpu.bus.read(pte, 8).unwrap() & A, 0);
+}
