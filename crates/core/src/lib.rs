@@ -8,6 +8,7 @@
 
 pub mod bus;
 pub mod cpu;
+pub mod csr;
 pub mod decode;
 pub mod elf;
 pub mod htif;
