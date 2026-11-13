@@ -136,3 +136,39 @@ is many commits.
 **Reason:** the other projects of the author keep the order of the work in
 `docs/roadmap.md`. The plan named the file `MILESTONES.md`. One name for one
 job in each project of the author makes each project easier to read.
+
+## D11: M1 includes the CSR file and the trap path
+
+**Options:** add only RV64I in M1 and the CSRs in M3, or add the CSRs and
+traps in M1.
+
+**Choice:** M1 adds the whole CSR file, the trap path, `mret` and `sret`.
+
+**Reason:** the start code of each riscv-tests program writes `mtvec`,
+`mstatus` and `mepc`, then uses `mret` to enter the test. Each test ends with
+`ecall`, and the trap handler writes `tohost`. No `rv64ui-p` test can pass
+without them. M3 then adds what only its own tests need.
+
+## D12: hartwood has no PMP
+
+**Options:** implement the physical memory protection registers and check
+each access, or give zero PMP entries.
+
+**Choice:** `pmpcfg` and `pmpaddr` read as zero, and a write does nothing.
+
+**Reason:** the specification allows zero PMP entries. OpenSBI and Linux
+read the registers back to count the entries, and then use none. A check of
+each access costs time on every load and store, and protects nothing in an
+emulator with one program.
+
+## D13: A misaligned load or store in RAM works, and does not trap
+
+**Options:** trap on each misaligned access, or do it.
+
+**Choice:** a misaligned load or store to RAM works. An atomic access that
+is misaligned traps, as the A extension requires. An access to a device
+must be aligned.
+
+**Reason:** the specification allows both. Linux and OpenSBI can emulate a
+misaligned access in a trap handler, but that path is slow and seldom
+tested. The riscv-tests `ma_data` test accepts both.
