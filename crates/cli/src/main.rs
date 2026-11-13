@@ -170,7 +170,7 @@ fn run(args: &RunArgs) -> Result<ExitCode> {
 
     match stop {
         Stop::Exit(code) => Ok(ExitCode::from(code.min(255) as u8)),
-        Stop::Reset => Ok(ExitCode::SUCCESS),
+        Stop::Reset | Stop::Breakpoint => Ok(ExitCode::SUCCESS),
         Stop::StepLimit => {
             eprintln!("hartwood: stopped after {} instructions", cpu.instret);
             Ok(ExitCode::from(124))

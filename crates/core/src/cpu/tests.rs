@@ -326,3 +326,19 @@ fn a_peek_reads_through_the_page_table_and_changes_nothing() {
     // The A bit is still clear.
     assert_eq!(cpu.bus.read(pte, 8).unwrap() & A, 0);
 }
+
+#[test]
+fn a_breakpoint_stops_before_its_instruction() {
+    let mut cpu = cpu_with(&[addi(5, 0, 1), addi(6, 0, 2), addi(7, 0, 3)]);
+    assert_eq!(
+        cpu.run_with_breakpoints(10, &[RAM_BASE + 8]),
+        Stop::Breakpoint
+    );
+    assert_eq!((cpu.pc, cpu.x[6], cpu.x[7]), (RAM_BASE + 8, 2, 0));
+    // A run from the breakpoint does not stop on it again at once.
+    assert_eq!(
+        cpu.run_with_breakpoints(1, &[RAM_BASE + 8]),
+        Stop::StepLimit
+    );
+    assert_eq!(cpu.x[7], 3);
+}

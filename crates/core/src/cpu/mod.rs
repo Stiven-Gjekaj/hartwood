@@ -30,6 +30,9 @@ pub enum Stop {
     /// The hart waits in `wfi`, and no timer will wake it. Only input from
     /// the host can.
     Idle,
+    /// The program counter reached a breakpoint. The instruction there has
+    /// not run.
+    Breakpoint,
 }
 
 /// The kind of a memory access, for the MMU and for the fault that it
@@ -115,6 +118,25 @@ impl Cpu {
                     Request::PowerOff(code) => Stop::Exit(code),
                     Request::Reset => Stop::Reset,
                 };
+            }
+        }
+        Stop::StepLimit
+    }
+
+    /// Runs as [`Cpu::run`] does, and stops before the instruction at any
+    /// address in `breakpoints`. The first step never stops, so a caller
+    /// can continue from a breakpoint.
+    pub fn run_with_breakpoints(&mut self, max_steps: u64, breakpoints: &[u64]) -> Stop {
+        if breakpoints.is_empty() {
+            return self.run(max_steps);
+        }
+        for n in 0..max_steps {
+            if n > 0 && breakpoints.contains(&self.pc) {
+                return Stop::Breakpoint;
+            }
+            match self.run(1) {
+                Stop::StepLimit => {}
+                other => return other,
             }
         }
         Stop::StepLimit
