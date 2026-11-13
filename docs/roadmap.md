@@ -27,7 +27,7 @@ flowchart LR
 | Milestone | Status | Exit test |
 |---|---|---|
 | M0 | Done | A test program exits with the code that it writes to `tohost`. |
-| M1 | Not started | Each `rv64ui-p-*` test passes. |
+| M1 | Done | Each `rv64ui-p-*` test passes. |
 | M2 | Not started | Each `rv64um-p-*`, `rv64ua-p-*` and `rv64uc-p-*` test passes. |
 | M3 | Not started | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
 | M4 | Not started | The `-v-` form of each test above passes. |
@@ -61,6 +61,10 @@ uses `csrr`, `csrw`, `ecall` and `mret` in its start code, so M1 also adds
 the CSRs and the trap path that the start code needs.
 
 Exit test: `hartwood-testsuite rv64ui-p-` reports no failure.
+
+Status: done on 2026-11-13. 54 of 54 `rv64ui-p` tests pass, and 72 unit
+and integration tests pass. The same run shows 12 of 17 `rv64mi-p` tests
+and 4 of 7 `rv64si-p` tests that already pass.
 
 ## M2: the M, A and C extensions
 
