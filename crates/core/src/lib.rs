@@ -12,6 +12,7 @@ pub mod compressed;
 pub mod cpu;
 pub mod csr;
 pub mod decode;
+pub mod devices;
 pub mod elf;
 pub mod htif;
 pub mod pmp;
