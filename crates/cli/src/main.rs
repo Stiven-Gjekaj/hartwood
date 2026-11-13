@@ -68,6 +68,9 @@ struct RunArgs {
     /// Stop with code 0 when the console prints this text.
     #[arg(long)]
     until: Option<String>,
+    /// Print the number of steps, the time and the speed at the end.
+    #[arg(long)]
+    stats: bool,
 }
 
 fn main() -> Result<ExitCode> {
@@ -108,6 +111,7 @@ fn run(args: &RunArgs) -> Result<ExitCode> {
     let mut out = stdout.lock();
     let mut printed = Vec::new();
     let mut left = args.max_steps;
+    let started = std::time::Instant::now();
 
     let stop = loop {
         let tracing = args.trace && cpu.cycle >= args.trace_from;
@@ -167,6 +171,15 @@ fn run(args: &RunArgs) -> Result<ExitCode> {
     };
     console.close();
     out.flush()?;
+    if args.stats {
+        let secs = started.elapsed().as_secs_f64();
+        eprintln!(
+            "hartwood: {} steps, {} instructions in {secs:.2} s: {:.1} million steps a second",
+            cpu.cycle,
+            cpu.instret,
+            cpu.cycle as f64 / secs / 1e6
+        );
+    }
 
     match stop {
         Stop::Exit(code) => Ok(ExitCode::from(code.min(255) as u8)),

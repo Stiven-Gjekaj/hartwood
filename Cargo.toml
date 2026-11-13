@@ -37,3 +37,8 @@ codegen-units = 1
 # twenty times slower, so the tests compile the emulator with optimisation.
 [profile.test]
 opt-level = 3
+
+# A release build with symbols, for a profiler.
+[profile.profiling]
+inherits = "release"
+debug = true
