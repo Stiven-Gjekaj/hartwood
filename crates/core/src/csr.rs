@@ -289,6 +289,9 @@ impl Csr {
             0x3a4..=0x3af => 0,
             0x3b0..=0x3bf => self.pmp.read_addr(usize::from(addr - PMPADDR0)),
             0x3c0..=0x3ef => 0,
+            // The trigger module has no trigger: tdata1 reads as type 0.
+            // The riscv-tests and OpenSBI read it, see type 0, and skip it.
+            0x7a0..=0x7a3 => 0,
             MVENDORID | MARCHID | MIMPID | MHARTID | MCONFIGPTR => 0,
             _ => return None,
         };
