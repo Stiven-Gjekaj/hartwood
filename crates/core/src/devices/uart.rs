@@ -58,6 +58,13 @@ impl Uart {
         !self.rx.is_empty()
     }
 
+    /// Tells if the program turned on the interrupt for received bytes. A
+    /// driver does that when it is ready to read, so a host can hold its
+    /// scripted input until then.
+    pub fn receive_enabled(&self) -> bool {
+        self.ier & IER_RX != 0
+    }
+
     /// The level of the interrupt line.
     pub fn interrupt(&self) -> bool {
         (self.ier & IER_RX != 0 && !self.rx.is_empty())
