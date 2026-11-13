@@ -269,3 +269,134 @@ must match bit for bit. A second test checks the directed modes with the
 exact error of each sum (TwoSum): the result must be the neighbour on the
 right side. The riscv-tests `rv64uf` and `rv64ud` suites check the RISC-V
 rules for NaN, the flags and the conversions.
+
+## D19: The timer counts steps, and wfi jumps to the next timer event
+
+**Options:** `mtime` from the clock of the host, or from the count of steps
+of the hart.
+
+**Choice:** each step adds one to `mtime`. The device tree says 10 MHz, as
+the `virt` machine does. When the hart runs `wfi` and no interrupt is
+pending, `mtime` jumps to the next compare value of the CLINT or of Sstc.
+If no timer is set, the run stops with `Stop::Idle`, and the host waits for
+a key.
+
+**Reason:** the clock of the host makes each run different. A test that
+fails once in ten runs is a test that nobody can debug. With steps, a boot
+is the same on each host and in the browser.
+The jump makes an idle system cost nothing. A shell that waits for a key
+does not burn the CPU of the host, and a `sleep 1` in the guest takes no
+time on the host. Nothing that a program can see happens while the hart
+waits, so the jump is invisible to it.
+The cost: the time in the guest is not the time on the wall. At 50 million
+steps a second, one second of guest time takes 0.2 seconds of host time
+when the guest is busy.
+
+## D20: The virtio device runs each request when the driver notifies it
+
+**Options:** run the requests later, as a disk with a delay does, or at once
+when the driver writes `QueueNotify`.
+
+**Choice:** at once. The interrupt comes before the next instruction.
+
+**Reason:** the disk image is in memory, so a request takes no time. A
+delay adds a timer and a queue, and tests nothing that xv6 or Linux needs.
+Both drivers accept an interrupt that comes before they sleep: they check
+the used ring with their lock held.
+
+## D21: The transmit register of the UART is always empty
+
+**Choice:** a byte that the program writes to the UART goes to the host
+buffer at once. LSR always says that the transmitter is empty. The
+interrupt for an empty transmitter follows the 16550: a write raises it,
+and a read of IIR that reports it clears it.
+
+**Reason:** the host takes the bytes faster than any program can write them.
+xv6 and Linux both wait for the interrupt before they send the next byte, so
+it must exist, and it must clear the way a real 16550 clears it, or the line
+stays high and the guest takes the interrupt forever.
+
+## D22: The device tree comes from the constants of the bus
+
+**Options:** a `.dts` file compiled with `dtc`, or a tree that the emulator
+writes at boot.
+
+**Choice:** `fdt.rs` writes the tree from the same constants that the bus
+uses, with the size of the RAM, the command line and the place of the
+initramfs.
+
+**Reason:** a file and the code can disagree, and the boot then fails with
+no message. One source cannot disagree with itself. `dtc` still reads the
+output in the documentation example, so a person can check it.
+
+## D23: Linux boots from BusyBox, OpenSBI and Linux built directly, not from Buildroot
+
+**Options:** Buildroot, or three builds in one script.
+
+**Choice:** `scripts/build-linux.sh` builds OpenSBI `fw_jump`, a kernel from
+`tinyconfig` and `scripts/linux.config`, and a static BusyBox in an
+initramfs. Each source has a fixed version and a checksum.
+
+**Reason:** Buildroot builds its own compiler first, which takes about an
+hour in CI. The three builds take about six minutes with the compiler of
+Ubuntu. The result is the same for this project: a kernel, a firmware and a
+BusyBox shell. A small kernel also boots faster, which matters in the
+browser. The script checks that each option of the fragment survives
+`olddefconfig`, because a dependency that is off removes an option with no
+message. That check found the missing `SHMEM` that `TMPFS` needs.
+
+## D24: Scripted input waits until the guest turns on the receive interrupt
+
+**Choice:** `hartwood run --input` holds its bytes until the guest sets the
+receive interrupt in the IER of the UART.
+
+**Reason:** the first version gave the bytes at once. `uartinit` in xv6
+clears the FIFO, so the `ls` of the test vanished, and the test waited
+forever for output. A driver turns the interrupt on when it is ready to
+read, in xv6 and in Linux, so that is the moment to type.
+
+## D25: The web frontend runs the emulator in a worker, in slices of 20 ms
+
+**Choice:** a Web Worker owns the emulator. It runs slices of steps, sized so
+that each takes about 20 ms, and yields between them through a
+`MessageChannel`. Each 64-bit value crosses to the page as a hex string.
+
+**Reason:** a run on the main thread freezes the page. Slices let the worker
+read a pause, a key or a breakpoint within 20 ms. A browser can slow
+`setTimeout` in a hidden tab to one call a second, and that cut the speed
+from 26 to 2 million steps a second in the first test. A message on a
+channel is not slowed. Hex strings keep each bit of a 64-bit register, which
+a JavaScript number cannot.
+
+## D26: The performance work follows the profile
+
+The profile of a boot of xv6 with `ls` (441 million steps, `samply`) showed
+these costs before M9:
+
+| Function | Share of the time |
+|---|---|
+| `Cpu::step` (with `execute`) | 35% |
+| `Pmp::allows` | 13% |
+| `Cpu::translate` | 12% |
+| `memmove`, from `Ram::read` and `Ram::write` | 12% |
+| `decode` | 9% |
+| `Bus::read` | 8% |
+
+Each change attacks one line of that table:
+
+1. `Ram` reads and writes with one arm for each width. The copy then has a
+   fixed size, and the compiler makes it one load and not a call to
+   `memmove`.
+2. The PMP keeps its last decision for each mode and kind of access, with
+   the range of addresses that the decision covers. The range stays clear
+   of each entry that did not match, so a later access in the range gets
+   the same answer. A write to a PMP register clears the cache.
+3. A cache of decoded instructions, keyed by the raw bits and not by the
+   address. `decode` is a pure function of the bits, so an entry can never
+   be stale, and the cache needs no flush on `fence.i` or on a write to
+   code. A cache keyed by address would need both.
+4. The fetch translates the program counter once, and reads 32 bits from
+   RAM in one access when the instruction does not end a page.
+
+A cache of basic blocks or a JIT can go further, but each one must catch a
+write to code. The plan put the JIT out of scope.
