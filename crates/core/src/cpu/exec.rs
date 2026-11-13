@@ -13,6 +13,19 @@ fn sext_w(value: u64) -> u64 {
     value as i32 as i64 as u64
 }
 
+/// Signed division as the M extension defines it. A division by zero gives
+/// -1. The one overflow, the most negative value divided by -1, gives the
+/// most negative value. Neither traps.
+fn div(a: i64, b: i64) -> i64 {
+    if b == 0 { -1 } else { a.wrapping_div(b) }
+}
+
+/// The remainder that goes with [`div`]. A division by zero gives the
+/// dividend. The overflow gives zero.
+fn rem(a: i64, b: i64) -> i64 {
+    if b == 0 { a } else { a.wrapping_rem(b) }
+}
+
 impl Cpu {
     /// Runs one instruction. On success, the program counter moves to the
     /// next instruction or to the target of a jump. On an exception, the
@@ -114,6 +127,44 @@ impl Cpu {
             Op::Sllw => self.set_reg(i.rd, sext_w(rs1 << (rs2 & 0x1f))),
             Op::Srlw => self.set_reg(i.rd, sext_w((rs1 as u32 >> (rs2 & 0x1f)) as u64)),
             Op::Sraw => self.set_reg(i.rd, ((rs1 as i32) >> (rs2 & 0x1f)) as i64 as u64),
+
+            Op::Mul => self.set_reg(i.rd, rs1.wrapping_mul(rs2)),
+            Op::Mulh => {
+                let v = (i128::from(rs1 as i64) * i128::from(rs2 as i64)) >> 64;
+                self.set_reg(i.rd, v as u64);
+            }
+            Op::Mulhsu => {
+                let v = (i128::from(rs1 as i64) * i128::from(rs2)) >> 64;
+                self.set_reg(i.rd, v as u64);
+            }
+            Op::Mulhu => {
+                let v = (u128::from(rs1) * u128::from(rs2)) >> 64;
+                self.set_reg(i.rd, v as u64);
+            }
+            Op::Div => self.set_reg(i.rd, div(rs1 as i64, rs2 as i64) as u64),
+            Op::Divu => self.set_reg(i.rd, rs1.checked_div(rs2).unwrap_or(u64::MAX)),
+            Op::Rem => self.set_reg(i.rd, rem(rs1 as i64, rs2 as i64) as u64),
+            Op::Remu => self.set_reg(i.rd, rs1.checked_rem(rs2).unwrap_or(rs1)),
+            Op::Mulw => self.set_reg(i.rd, sext_w(rs1.wrapping_mul(rs2))),
+            Op::Divw => {
+                let v = div(i64::from(rs1 as i32), i64::from(rs2 as i32));
+                self.set_reg(i.rd, sext_w(v as u64));
+            }
+            Op::Divuw => {
+                let (a, b) = (rs1 as u32, rs2 as u32);
+                self.set_reg(
+                    i.rd,
+                    sext_w(u64::from(a.checked_div(b).unwrap_or(u32::MAX))),
+                );
+            }
+            Op::Remw => {
+                let v = rem(i64::from(rs1 as i32), i64::from(rs2 as i32));
+                self.set_reg(i.rd, sext_w(v as u64));
+            }
+            Op::Remuw => {
+                let (a, b) = (rs1 as u32, rs2 as u32);
+                self.set_reg(i.rd, sext_w(u64::from(a.checked_rem(b).unwrap_or(a))));
+            }
 
             // One hart, and no cache of instructions that can go stale, so
             // both fences have nothing to order.
@@ -217,5 +268,30 @@ impl Cpu {
         }
         self.set_reg(i.rd, old);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_division_by_zero_does_not_trap() {
+        assert_eq!(div(7, 0), -1);
+        assert_eq!(rem(7, 0), 7);
+    }
+
+    #[test]
+    fn the_overflow_of_a_division_gives_the_dividend() {
+        assert_eq!(div(i64::MIN, -1), i64::MIN);
+        assert_eq!(rem(i64::MIN, -1), 0);
+        // The word forms use the same functions on 32-bit values.
+        assert_eq!(div(i64::from(i32::MIN), -1) as i32, i32::MIN);
+    }
+
+    #[test]
+    fn a_division_rounds_toward_zero() {
+        assert_eq!(div(-7, 2), -3);
+        assert_eq!(rem(-7, 2), -1);
     }
 }

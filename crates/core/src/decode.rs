@@ -81,6 +81,21 @@ pub enum Op {
     Wfi,
     SfenceVma,
 
+    // M
+    Mul,
+    Mulh,
+    Mulhsu,
+    Mulhu,
+    Div,
+    Divu,
+    Rem,
+    Remu,
+    Mulw,
+    Divw,
+    Divuw,
+    Remw,
+    Remuw,
+
     /// An encoding that names no operation that hartwood implements.
     Illegal,
 }
@@ -249,6 +264,14 @@ pub fn decode(raw: u32) -> Instruction {
                 (0, 0b100) => Op::Xor,
                 (0, 0b101) => Op::Srl,
                 (0b010_0000, 0b101) => Op::Sra,
+                (1, 0b000) => Op::Mul,
+                (1, 0b001) => Op::Mulh,
+                (1, 0b010) => Op::Mulhsu,
+                (1, 0b011) => Op::Mulhu,
+                (1, 0b100) => Op::Div,
+                (1, 0b101) => Op::Divu,
+                (1, 0b110) => Op::Rem,
+                (1, 0b111) => Op::Remu,
                 (0, 0b110) => Op::Or,
                 (0, 0b111) => Op::And,
                 _ => return illegal,
@@ -276,6 +299,11 @@ pub fn decode(raw: u32) -> Instruction {
                 (0, 0b001) => Op::Sllw,
                 (0, 0b101) => Op::Srlw,
                 (0b010_0000, 0b101) => Op::Sraw,
+                (1, 0b000) => Op::Mulw,
+                (1, 0b100) => Op::Divw,
+                (1, 0b101) => Op::Divuw,
+                (1, 0b110) => Op::Remw,
+                (1, 0b111) => Op::Remuw,
                 _ => return illegal,
             };
             Instruction::new(op, raw)
@@ -407,6 +435,13 @@ mod tests {
         assert_eq!(decode(0x1050_0073).op, Op::Wfi);
         assert_eq!(decode(0x1200_0073).op, Op::SfenceVma);
         assert_eq!(decode(0x0000_100f).op, Op::FenceI);
+    }
+
+    #[test]
+    fn the_m_extension_decodes() {
+        // mulhsu a0, a1, a2 and remuw a0, a1, a2
+        assert_eq!(decode(0x02c5_a533).op, Op::Mulhsu);
+        assert_eq!(decode(0x02c5_f53b).op, Op::Remuw);
     }
 
     #[test]
