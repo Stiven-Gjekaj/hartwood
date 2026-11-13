@@ -363,9 +363,9 @@ that each takes about 20 ms, and yields between them through a
 
 **Reason:** a run on the main thread freezes the page. Slices let the worker
 read a pause, a key or a breakpoint within 20 ms. A browser can slow
-`setTimeout` in a hidden tab to one call a second, and that cut the speed
-from 26 to 2 million steps a second in the first test. A message on a
-channel is not slowed. Hex strings keep each bit of a 64-bit register, which
+`setTimeout` in a hidden tab. In a hidden tab, the first test ran 2.1
+million steps a second with `setTimeout`, and 7.5 million with a channel,
+on the same boot of xv6. A message on a channel is not slowed. Hex strings keep each bit of a 64-bit register, which
 a JavaScript number cannot.
 
 ## D26: The performance work follows the profile
