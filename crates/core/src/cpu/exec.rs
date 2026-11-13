@@ -2,8 +2,8 @@
 
 use super::{Access, Cpu, set_bit};
 use crate::csr::{
-    MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPRV, MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP,
-    MSTATUS_TSR, MSTATUS_TVM, MSTATUS_TW, Mode,
+    MCYCLE, MINSTRET, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPRV, MSTATUS_SIE,
+    MSTATUS_SPIE, MSTATUS_SPP, MSTATUS_TSR, MSTATUS_TVM, MSTATUS_TW, Mode,
 };
 use crate::decode::{Instruction, Op};
 use crate::trap::Exception;
@@ -356,6 +356,14 @@ impl Cpu {
                 _ => old & !operand,
             };
             self.csr.write(addr, new);
+            // A write to a counter sets the value that the next instruction
+            // reads, so the count of this instruction is taken off here. The
+            // step adds it back.
+            match addr {
+                MCYCLE => self.cycle = new.wrapping_sub(1),
+                MINSTRET => self.instret = new.wrapping_sub(1),
+                _ => {}
+            }
         }
         self.set_reg(i.rd, old);
         Ok(())

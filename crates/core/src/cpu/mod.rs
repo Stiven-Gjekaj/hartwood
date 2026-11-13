@@ -40,6 +40,9 @@ pub struct Cpu {
     pub csr: Csr,
     /// The number of instructions that retired.
     pub instret: u64,
+    /// The number of steps: each instruction and each trap. hartwood counts
+    /// one cycle for each step.
+    pub cycle: u64,
     /// The physical address that `lr` reserved, until an `sc` or a trap.
     pub reservation: Option<u64>,
     pub bus: Bus,
@@ -55,6 +58,7 @@ impl Cpu {
             mode: Mode::Machine,
             csr: Csr::new(),
             instret: 0,
+            cycle: 0,
             reservation: None,
             bus,
         }
@@ -93,12 +97,13 @@ impl Cpu {
     pub fn step(&mut self) {
         if let Some(irq) = self.pending_interrupt() {
             self.take_trap(Trap::Interrupt(irq));
-            return;
+        } else {
+            match self.fetch().and_then(|inst| self.execute(&inst)) {
+                Ok(()) => self.instret = self.instret.wrapping_add(1),
+                Err(e) => self.take_trap(Trap::Exception(e)),
+            }
         }
-        match self.fetch().and_then(|inst| self.execute(&inst)) {
-            Ok(()) => self.instret += 1,
-            Err(e) => self.take_trap(Trap::Exception(e)),
-        }
+        self.cycle = self.cycle.wrapping_add(1);
     }
 
     /// Reads and decodes the instruction at the program counter.
@@ -201,6 +206,7 @@ impl Cpu {
     pub(crate) fn csr_context(&self) -> CsrContext {
         CsrContext {
             mode: self.mode,
+            cycle: self.cycle,
             instret: self.instret,
             time: 0,
         }

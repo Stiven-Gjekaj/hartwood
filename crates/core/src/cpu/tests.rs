@@ -152,3 +152,12 @@ fn user_mode_with_no_pmp_entry_gets_an_access_fault() {
     assert_eq!(cpu.csr.mcause, 1);
     assert_eq!(cpu.x[5], 0);
 }
+
+#[test]
+fn a_write_to_minstret_is_the_next_value_read() {
+    use crate::csr::MINSTRET;
+    let mut cpu = cpu_with(&[csrrw(0, MINSTRET, 5), csrrs(6, MINSTRET, 0)]);
+    cpu.x[5] = 100;
+    cpu.run(2);
+    assert_eq!(cpu.x[6], 100);
+}

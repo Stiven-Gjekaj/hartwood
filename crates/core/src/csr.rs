@@ -147,6 +147,8 @@ const INTERRUPT_BITS: u64 = 0xaaa;
 /// What a CSR access needs, other than the CSR file.
 pub struct CsrContext {
     pub mode: Mode,
+    /// The number of steps, for `cycle`.
+    pub cycle: u64,
     /// The number of instructions that retired, for `instret`.
     pub instret: u64,
     /// The value of `mtime`, for `time`.
@@ -252,7 +254,8 @@ impl Csr {
             FFLAGS => self.fflags,
             FRM => self.frm,
             FCSR => (self.frm << 5) | self.fflags,
-            CYCLE | INSTRET | MCYCLE | MINSTRET => ctx.instret,
+            CYCLE | MCYCLE => ctx.cycle,
+            INSTRET | MINSTRET => ctx.instret,
             TIME => ctx.time,
             // The other performance counters exist, and count nothing.
             0xc03..=0xc1f | 0xb03..=0xb1f | 0x323..=0x33f => 0,
@@ -402,6 +405,7 @@ mod tests {
     fn ctx(mode: Mode) -> CsrContext {
         CsrContext {
             mode,
+            cycle: 7,
             instret: 7,
             time: 9,
         }
