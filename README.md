@@ -32,6 +32,30 @@ It has three goals:
 2. Boot xv6-riscv, then OpenSBI with a Linux kernel to a BusyBox shell.
 3. Run in the browser as WebAssembly, with a console and a debugger.
 
+## Build
+
+hartwood needs Rust. The toolchain file installs the pinned version.
+
+    cargo test --workspace
+    cargo run -p hartwood-cli -- run <program.elf>
+
+The riscv-tests suite needs a RISC-V compiler for bare metal.
+On macOS:
+
+    brew install riscv64-elf-gcc
+    scripts/build-riscv-tests.sh
+    cargo run --release -p hartwood-testsuite -- rv64ui-p-
+
+On Ubuntu:
+
+    sudo apt-get install gcc-riscv64-unknown-elf
+    scripts/build-riscv-tests.sh
+
+The web frontend needs `wasm-pack` and Node.js:
+
+    rustup target add wasm32-unknown-unknown
+    brew install wasm-pack
+
 ## Licence
 
 hartwood is under the [MIT licence](LICENSE).
