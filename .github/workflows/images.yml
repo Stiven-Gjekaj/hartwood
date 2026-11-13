@@ -46,14 +46,18 @@ jobs:
 
   linux:
     name: build OpenSBI, Linux and BusyBox
-    runs-on: ubuntu-latest
+    # The cross compiler of Ubuntu 25.10 and later targets the RVA23 profile,
+    # and its C library holds vector instructions. hartwood has no V, so
+    # BusyBox, which links that library, must come from Ubuntu 24.04, where
+    # the target is rv64gc.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/linux
-          key: linux-${{ hashFiles('scripts/build-linux.sh', 'scripts/linux.config', 'scripts/rootfs/**') }}
+          key: linux-ubuntu-24.04-${{ hashFiles('scripts/build-linux.sh', 'scripts/linux.config', 'scripts/rootfs/**') }}
       - name: build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
