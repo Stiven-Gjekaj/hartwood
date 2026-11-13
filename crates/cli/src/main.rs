@@ -80,10 +80,6 @@ fn run(image: &PathBuf, trace: bool, max_steps: u64, ram_mib: usize) -> Result<E
             eprintln!("hartwood: stopped after {} instructions", cpu.instret);
             Ok(ExitCode::from(124))
         }
-        Stop::Exception(e) => {
-            eprintln!("hartwood: {e:?} at pc {:#x}", cpu.pc);
-            Ok(ExitCode::from(125))
-        }
     }
 }
 

@@ -54,7 +54,6 @@ pub fn run_bytes(bytes: &[u8]) -> Outcome {
         Stop::Exit(0) => Outcome::Pass,
         Stop::Exit(n) => Outcome::Fail(n),
         Stop::StepLimit => Outcome::Timeout,
-        Stop::Exception(e) => Outcome::Error(format!("{e:?} at pc {:#x}", cpu.pc)),
     }
 }
 
