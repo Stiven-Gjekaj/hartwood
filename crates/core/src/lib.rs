@@ -7,6 +7,7 @@
 //! `wasm32-unknown-unknown`.
 
 pub mod asm;
+pub mod boot;
 pub mod bus;
 pub mod compressed;
 pub mod cpu;
