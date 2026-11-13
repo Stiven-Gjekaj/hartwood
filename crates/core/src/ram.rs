@@ -25,10 +25,16 @@ impl Ram {
     ///
     /// Returns `None` if the access does not fit in the block.
     pub fn read(&self, offset: u64, width: usize) -> Option<u64> {
-        let bytes = self.slice(offset, width)?;
-        let mut buf = [0u8; 8];
-        buf[..width].copy_from_slice(bytes);
-        Some(u64::from_le_bytes(buf))
+        let b = self.slice(offset, width)?;
+        // One arm for each width, so each copy has a fixed size and the
+        // compiler makes it one load, and not a call to memcpy.
+        Some(match width {
+            1 => u64::from(b[0]),
+            2 => u64::from(u16::from_le_bytes([b[0], b[1]])),
+            4 => u64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+            8 => u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+            _ => return None,
+        })
     }
 
     /// Writes the low `width` bytes (1, 2, 4 or 8) of `value` at `offset`.
@@ -38,7 +44,13 @@ impl Ram {
         let start = usize::try_from(offset).ok()?;
         let end = start.checked_add(width)?;
         let dest = self.data.get_mut(start..end)?;
-        dest.copy_from_slice(&value.to_le_bytes()[..width]);
+        match width {
+            1 => dest[0] = value as u8,
+            2 => dest.copy_from_slice(&(value as u16).to_le_bytes()),
+            4 => dest.copy_from_slice(&(value as u32).to_le_bytes()),
+            8 => dest.copy_from_slice(&value.to_le_bytes()),
+            _ => return None,
+        }
         Some(())
     }
 
@@ -75,6 +87,13 @@ mod tests {
         ram.write(0, 8, u64::MAX).unwrap();
         ram.write(2, 2, 0).unwrap();
         assert_eq!(ram.read(0, 8), Some(0xffff_ffff_0000_ffff));
+    }
+
+    #[test]
+    fn a_width_that_is_not_a_power_of_two_fails() {
+        let mut ram = Ram::new(16);
+        assert_eq!(ram.read(0, 3), None);
+        assert_eq!(ram.write(0, 3, 0), None);
     }
 
     #[test]
