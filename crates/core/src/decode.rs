@@ -96,6 +96,31 @@ pub enum Op {
     Remw,
     Remuw,
 
+    // A. The `aq` and `rl` bits order memory between harts. hartwood has
+    // one hart, so the decoder drops them.
+    LrW,
+    ScW,
+    AmoswapW,
+    AmoaddW,
+    AmoxorW,
+    AmoandW,
+    AmoorW,
+    AmominW,
+    AmomaxW,
+    AmominuW,
+    AmomaxuW,
+    LrD,
+    ScD,
+    AmoswapD,
+    AmoaddD,
+    AmoxorD,
+    AmoandD,
+    AmoorD,
+    AmominD,
+    AmomaxD,
+    AmominuD,
+    AmomaxuD,
+
     /// An encoding that names no operation that hartwood implements.
     Illegal,
 }
@@ -314,8 +339,41 @@ pub fn decode(raw: u32) -> Instruction {
             _ => illegal,
         },
         0b111_0011 => decode_system(raw),
+        0b010_1111 => decode_atomic(raw),
         _ => illegal,
     }
+}
+
+/// Decodes the AMO opcode of the A extension.
+fn decode_atomic(raw: u32) -> Instruction {
+    let illegal = Instruction::new(Op::Illegal, raw);
+    let funct5 = raw >> 27;
+    let op = match (funct3(raw), funct5) {
+        (0b010, 0b00010) if rs2(raw) == 0 => Op::LrW,
+        (0b010, 0b00011) => Op::ScW,
+        (0b010, 0b00001) => Op::AmoswapW,
+        (0b010, 0b00000) => Op::AmoaddW,
+        (0b010, 0b00100) => Op::AmoxorW,
+        (0b010, 0b01100) => Op::AmoandW,
+        (0b010, 0b01000) => Op::AmoorW,
+        (0b010, 0b10000) => Op::AmominW,
+        (0b010, 0b10100) => Op::AmomaxW,
+        (0b010, 0b11000) => Op::AmominuW,
+        (0b010, 0b11100) => Op::AmomaxuW,
+        (0b011, 0b00010) if rs2(raw) == 0 => Op::LrD,
+        (0b011, 0b00011) => Op::ScD,
+        (0b011, 0b00001) => Op::AmoswapD,
+        (0b011, 0b00000) => Op::AmoaddD,
+        (0b011, 0b00100) => Op::AmoxorD,
+        (0b011, 0b01100) => Op::AmoandD,
+        (0b011, 0b01000) => Op::AmoorD,
+        (0b011, 0b10000) => Op::AmominD,
+        (0b011, 0b10100) => Op::AmomaxD,
+        (0b011, 0b11000) => Op::AmominuD,
+        (0b011, 0b11100) => Op::AmomaxuD,
+        _ => return illegal,
+    };
+    Instruction::new(op, raw)
 }
 
 /// Decodes the SYSTEM opcode: the CSR instructions and the privileged
@@ -442,6 +500,16 @@ mod tests {
         // mulhsu a0, a1, a2 and remuw a0, a1, a2
         assert_eq!(decode(0x02c5_a533).op, Op::Mulhsu);
         assert_eq!(decode(0x02c5_f53b).op, Op::Remuw);
+    }
+
+    #[test]
+    fn the_a_extension_decodes() {
+        // lr.d.aq a0, (a1), amoswap.w.aqrl a0, a2, (a1), amomaxu.d a0, a2, (a1)
+        assert_eq!(decode(0x1405_b52f).op, Op::LrD);
+        assert_eq!(decode(0x0ec5_a52f).op, Op::AmoswapW);
+        assert_eq!(decode(0xe0c5_b52f).op, Op::AmomaxuD);
+        // lr.w with rs2 != 0 is reserved.
+        assert_eq!(decode(0x1015_a52f).op, Op::Illegal);
     }
 
     #[test]

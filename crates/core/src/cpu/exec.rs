@@ -1,6 +1,6 @@
 //! Runs one decoded instruction.
 
-use super::{Cpu, set_bit};
+use super::{Access, Cpu, set_bit};
 use crate::csr::{
     MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPRV, MSTATUS_SIE, MSTATUS_SPIE, MSTATUS_SPP,
     MSTATUS_TSR, MSTATUS_TVM, MSTATUS_TW, Mode,
@@ -166,6 +166,49 @@ impl Cpu {
                 self.set_reg(i.rd, sext_w(u64::from(a.checked_rem(b).unwrap_or(a))));
             }
 
+            Op::LrW | Op::LrD => {
+                let width = if i.op == Op::LrW { 4 } else { 8 };
+                if !rs1.is_multiple_of(width as u64) {
+                    return Err(Exception::LoadAddressMisaligned(rs1));
+                }
+                let paddr = self.translate(rs1, Access::Load)?;
+                let v = self
+                    .bus
+                    .read(paddr, width)
+                    .map_err(|_| Exception::LoadAccessFault(rs1))?;
+                self.reservation = Some(paddr);
+                self.set_reg(i.rd, if width == 4 { sext_w(v) } else { v });
+            }
+            Op::ScW | Op::ScD => {
+                let width = if i.op == Op::ScW { 4 } else { 8 };
+                let paddr = self.atomic_address(rs1, width)?;
+                let ok = self.reservation.take() == Some(paddr);
+                if ok {
+                    self.bus
+                        .write(paddr, width, rs2)
+                        .map_err(|_| Exception::StoreAccessFault(rs1))?;
+                }
+                self.set_reg(i.rd, u64::from(!ok));
+            }
+            Op::AmoswapW
+            | Op::AmoaddW
+            | Op::AmoxorW
+            | Op::AmoandW
+            | Op::AmoorW
+            | Op::AmominW
+            | Op::AmomaxW
+            | Op::AmominuW
+            | Op::AmomaxuW
+            | Op::AmoswapD
+            | Op::AmoaddD
+            | Op::AmoxorD
+            | Op::AmoandD
+            | Op::AmoorD
+            | Op::AmominD
+            | Op::AmomaxD
+            | Op::AmominuD
+            | Op::AmomaxuD => self.execute_amo(i.op, i.rd, rs1, rs2)?,
+
             // One hart, and no cache of instructions that can go stale, so
             // both fences have nothing to order.
             Op::Fence | Op::FenceI => {}
@@ -234,6 +277,51 @@ impl Cpu {
             Op::Illegal => return Err(illegal),
         }
         self.pc = next_pc;
+        Ok(())
+    }
+
+    /// Runs one AMO: reads the value at `addr`, writes the result of the
+    /// operation on it and `rs2`, and puts the old value in `rd`.
+    fn execute_amo(&mut self, op: Op, rd: u8, addr: u64, rs2: u64) -> Result<(), Exception> {
+        use Op::*;
+        let word = matches!(
+            op,
+            AmoswapW
+                | AmoaddW
+                | AmoxorW
+                | AmoandW
+                | AmoorW
+                | AmominW
+                | AmomaxW
+                | AmominuW
+                | AmomaxuW
+        );
+        let width = if word { 4 } else { 8 };
+        let paddr = self.atomic_address(addr, width)?;
+        let fault = |_| Exception::StoreAccessFault(addr);
+        let raw = self.bus.read(paddr, width).map_err(fault)?;
+        // A word works on the sign extended value, so that the signed
+        // minimum and maximum compare the right numbers.
+        let (old, b) = if word {
+            (sext_w(raw), sext_w(rs2))
+        } else {
+            (raw, rs2)
+        };
+        let new = match op {
+            AmoswapW | AmoswapD => b,
+            AmoaddW | AmoaddD => old.wrapping_add(b),
+            AmoxorW | AmoxorD => old ^ b,
+            AmoandW | AmoandD => old & b,
+            AmoorW | AmoorD => old | b,
+            AmominW | AmominD => (old as i64).min(b as i64) as u64,
+            AmomaxW | AmomaxD => (old as i64).max(b as i64) as u64,
+            AmominuW => u64::from((old as u32).min(b as u32)),
+            AmomaxuW => u64::from((old as u32).max(b as u32)),
+            AmominuD => old.min(b),
+            _ => old.max(b),
+        };
+        self.bus.write(paddr, width, new).map_err(fault)?;
+        self.set_reg(rd, old);
         Ok(())
     }
 

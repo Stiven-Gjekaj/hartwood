@@ -40,6 +40,8 @@ pub struct Cpu {
     pub csr: Csr,
     /// The number of instructions that retired.
     pub instret: u64,
+    /// The physical address that `lr` reserved, until an `sc` or a trap.
+    pub reservation: Option<u64>,
     pub bus: Bus,
 }
 
@@ -53,6 +55,7 @@ impl Cpu {
             mode: Mode::Machine,
             csr: Csr::new(),
             instret: 0,
+            reservation: None,
             bus,
         }
     }
@@ -112,6 +115,15 @@ impl Cpu {
     /// the two are the same.
     fn translate(&mut self, vaddr: u64, _access: Access) -> Result<u64, Exception> {
         Ok(vaddr)
+    }
+
+    /// Runs an atomic access: checks the alignment, translates the address
+    /// as a store, because every AMO writes, and gives the physical address.
+    pub(crate) fn atomic_address(&mut self, vaddr: u64, width: usize) -> Result<u64, Exception> {
+        if !vaddr.is_multiple_of(width as u64) {
+            return Err(Exception::StoreAddressMisaligned(vaddr));
+        }
+        self.translate(vaddr, Access::Store)
     }
 
     /// Reads `width` bytes at a virtual address.
@@ -178,6 +190,9 @@ impl Cpu {
     /// Takes a trap: saves the state, and jumps to the handler of M-mode or
     /// of S-mode.
     fn take_trap(&mut self, trap: Trap) {
+        // A trap ends the reservation, so an `sc` after a context switch
+        // fails.
+        self.reservation = None;
         let (interrupt, code, tval) = match trap {
             Trap::Exception(e) => (false, e.code(), e.tval()),
             Trap::Interrupt(i) => (true, i as u64, 0),
