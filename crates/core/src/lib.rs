@@ -7,6 +7,7 @@
 //! `wasm32-unknown-unknown`.
 
 pub mod bus;
+pub mod decode;
 pub mod elf;
 pub mod htif;
 pub mod ram;
