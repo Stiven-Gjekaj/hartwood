@@ -112,3 +112,15 @@ jobs:
         run: |
           timeout 600 target/release/hartwood run build/xv6/kernel --drive build/xv6/fs.img \
             --input 'ls\n' --until 'zombie'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux
+          path: build/linux
+      # The exit test of M7. The command line has no 42 in it, so only the
+      # shell can print DONE-42.
+      - name: Linux runs uname, ls and cat /proc/cpuinfo
+        run: |
+          timeout 1200 target/release/hartwood run build/linux/fw_jump.bin \
+            --kernel build/linux/Image --initrd build/linux/rootfs.cpio --ram-mib 256 \
+            --input 'uname -a; ls /; cat /proc/cpuinfo; echo DONE-$((6*7))\n' \
+            --until 'DONE-42' --stats
