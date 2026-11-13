@@ -1,14 +1,19 @@
 //! `hartwood`: runs a RISC-V program or a boot image on the emulator.
 
+mod console;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use hartwood_core::bus::Bus;
 use hartwood_core::cpu::{Cpu, Stop};
 use hartwood_core::elf::Elf;
+
+use crate::console::Console;
 
 #[derive(Parser)]
 #[command(version, about = "An RV64GC emulator")]
@@ -19,68 +24,143 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Runs an ELF program until it writes an exit code to `tohost`.
-    Run {
-        /// The ELF file to run.
-        image: PathBuf,
-        /// Print each instruction before it runs.
-        #[arg(long)]
-        trace: bool,
-        /// Stop after this many instructions.
-        #[arg(long, default_value_t = u64::MAX)]
-        max_steps: u64,
-        /// The size of the RAM in MiB.
-        #[arg(long, default_value_t = 128)]
-        ram_mib: usize,
-    },
+    /// Runs an ELF program or a kernel, with the UART on this terminal.
+    Run(RunArgs),
+}
+
+#[derive(clap::Args)]
+struct RunArgs {
+    /// The ELF file to run.
+    image: PathBuf,
+    /// A raw disk image for the virtio block device. The emulator changes a
+    /// copy in memory, and not the file.
+    #[arg(long)]
+    drive: Option<PathBuf>,
+    /// Print each instruction before it runs.
+    #[arg(long)]
+    trace: bool,
+    /// Start the trace after this many steps.
+    #[arg(long, default_value_t = 0)]
+    trace_from: u64,
+    /// Stop after this many instructions.
+    #[arg(long, default_value_t = u64::MAX)]
+    max_steps: u64,
+    /// The size of the RAM in MiB.
+    #[arg(long, default_value_t = 128)]
+    ram_mib: usize,
+    /// Type these bytes on the console when the guest turns on the receive
+    /// interrupt of the UART, which a driver does when it is ready to read.
+    /// `\n` is a newline.
+    #[arg(long)]
+    input: Option<String>,
+    /// Stop with code 0 when the console prints this text.
+    #[arg(long)]
+    until: Option<String>,
 }
 
 fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Run {
-            image,
-            trace,
-            max_steps,
-            ram_mib,
-        } => run(&image, trace, max_steps, ram_mib),
+        Command::Run(args) => run(&args),
     }
 }
 
-fn run(image: &PathBuf, trace: bool, max_steps: u64, ram_mib: usize) -> Result<ExitCode> {
-    let bytes = std::fs::read(image).with_context(|| format!("cannot read {}", image.display()))?;
-    let elf = Elf::parse(&bytes).with_context(|| format!("cannot load {}", image.display()))?;
-    let mut cpu = Cpu::new(Bus::new(ram_mib << 20));
-    cpu.load_elf(&elf)
-        .map_err(|_| anyhow::anyhow!("a segment of {} is outside the RAM", image.display()))?;
+/// Reads a file, and names it in the error.
+fn read_file(path: &PathBuf) -> Result<Vec<u8>> {
+    std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))
+}
 
+fn run(args: &RunArgs) -> Result<ExitCode> {
+    let bytes = read_file(&args.image)?;
+    let elf =
+        Elf::parse(&bytes).with_context(|| format!("cannot load {}", args.image.display()))?;
+    let mut cpu = Cpu::new(Bus::new(args.ram_mib << 20));
+    if cpu.load_elf(&elf).is_err() {
+        bail!("a segment of {} is outside the RAM", args.image.display());
+    }
+    if let Some(drive) = &args.drive {
+        cpu.bus.virtio.disk = read_file(drive)?;
+    }
+    let mut script: Vec<u8> = args
+        .input
+        .as_ref()
+        .map(|s| s.replace("\\n", "\n").into_bytes())
+        .unwrap_or_default();
+
+    // The console reads the keyboard only when a person can type. With
+    // --input, the run is a script.
+    let mut console = Console::open(args.input.is_none())?;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    let mut left = max_steps;
+    let mut printed = Vec::new();
+    let mut left = args.max_steps;
+
     let stop = loop {
-        // Trace one instruction at a time, and run in large batches when no
-        // trace is asked for.
-        let batch = if trace { 1 } else { left.min(100_000) };
-        if trace {
+        let tracing = args.trace && cpu.cycle >= args.trace_from;
+        if tracing {
             let raw = cpu.bus.read(cpu.pc, 4).unwrap_or(0);
-            writeln!(out, "{:016x} {:08x}", cpu.pc, raw as u32)?;
+            console.write(
+                &mut out,
+                format!("{:016x} {:08x}\n", cpu.pc, raw as u32).as_bytes(),
+            )?;
         }
+        let batch = if tracing {
+            1
+        } else if args.trace {
+            (args.trace_from - cpu.cycle).clamp(1, 100_000).min(left)
+        } else {
+            left.min(100_000)
+        };
         let stop = cpu.run(batch);
-        flush_console(&mut cpu, &mut out)?;
-        left -= batch;
-        if stop != Stop::StepLimit || left == 0 {
-            break stop;
+        left -= batch.min(left);
+
+        // The console prints what the UART and the HTIF got.
+        for output in [&mut cpu.bus.uart.output, &mut cpu.bus.htif.output] {
+            if !output.is_empty() {
+                console.write(&mut out, output)?;
+                if args.until.is_some() {
+                    printed.extend_from_slice(output);
+                }
+                output.clear();
+            }
+        }
+        out.flush()?;
+        if let Some(until) = &args.until
+            && contains(&printed, until.as_bytes())
+        {
+            break Stop::Exit(0);
+        }
+        if console.quit_requested() {
+            break Stop::Exit(0);
+        }
+
+        if !script.is_empty() && cpu.bus.uart.receive_enabled() {
+            cpu.bus.push_input(&std::mem::take(&mut script));
+        }
+        let typed = console.take_input();
+        if !typed.is_empty() {
+            cpu.bus.push_input(&typed);
+        }
+        match stop {
+            Stop::StepLimit if left == 0 => break stop,
+            Stop::StepLimit => {}
+            // The hart sleeps until input comes. Wait for the keyboard.
+            Stop::Idle if console.interactive() => {
+                console.wait_for_input(Duration::from_millis(20))
+            }
+            other => break other,
         }
     };
+    console.close();
     out.flush()?;
 
     match stop {
         Stop::Exit(code) => Ok(ExitCode::from(code.min(255) as u8)),
+        Stop::Reset => Ok(ExitCode::SUCCESS),
         Stop::StepLimit => {
             eprintln!("hartwood: stopped after {} instructions", cpu.instret);
             Ok(ExitCode::from(124))
         }
-        Stop::Reset => Ok(ExitCode::SUCCESS),
         Stop::Idle => {
             eprintln!("hartwood: the hart waits for an interrupt that cannot come");
             Ok(ExitCode::from(124))
@@ -88,11 +168,7 @@ fn run(image: &PathBuf, trace: bool, max_steps: u64, ram_mib: usize) -> Result<E
     }
 }
 
-/// Writes what the program sent to the console since the last call.
-fn flush_console(cpu: &mut Cpu, out: &mut impl Write) -> Result<()> {
-    if !cpu.bus.htif.output.is_empty() {
-        out.write_all(&cpu.bus.htif.output)?;
-        cpu.bus.htif.output.clear();
-    }
-    Ok(())
+/// Tells if `needle` is in `haystack`.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle)
 }
