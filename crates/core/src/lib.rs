@@ -6,7 +6,9 @@
 //! devices write. The same core builds for a native host and for
 //! `wasm32-unknown-unknown`.
 
+pub mod asm;
 pub mod bus;
+pub mod compressed;
 pub mod cpu;
 pub mod csr;
 pub mod decode;
@@ -14,6 +16,3 @@ pub mod elf;
 pub mod htif;
 pub mod ram;
 pub mod trap;
-
-#[cfg(any(test, feature = "test-util"))]
-pub mod asm;

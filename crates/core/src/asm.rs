@@ -1,8 +1,8 @@
-//! A small assembler for tests.
+//! A small assembler: one function for each encoding format.
 //!
-//! A test builds its own program from these functions, so it does not need a
-//! RISC-V compiler and does not read a file that somebody edits. Each
-//! function gives the bits of one instruction in one encoding format.
+//! The decoder of compressed instructions uses it to write the 32-bit form
+//! of each one. A test builds its own program with it, so it does not need a
+//! RISC-V compiler and does not read a file that somebody edits.
 
 /// The R-type format: register to register.
 pub fn r(opcode: u32, funct3: u32, funct7: u32, rd: u32, rs1: u32, rs2: u32) -> u32 {
