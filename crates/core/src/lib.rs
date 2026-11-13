@@ -14,6 +14,7 @@ pub mod cpu;
 pub mod csr;
 pub mod decode;
 pub mod devices;
+pub mod disasm;
 pub mod elf;
 pub mod fdt;
 pub mod htif;
