@@ -8,7 +8,7 @@ use crate::csr::{
     Csr, CsrContext, MSTATUS_MIE, MSTATUS_MPIE, MSTATUS_MPP, MSTATUS_MPP_SHIFT, MSTATUS_SIE,
     MSTATUS_SPIE, MSTATUS_SPP, Mode,
 };
-use crate::decode::decode;
+use crate::decode::{Instruction, decode, decode_compressed};
 use crate::elf::Elf;
 use crate::trap::{Exception, Interrupt, Trap};
 
@@ -95,20 +95,33 @@ impl Cpu {
             self.take_trap(Trap::Interrupt(irq));
             return;
         }
-        match self.fetch().and_then(|raw| self.execute(&decode(raw))) {
+        match self.fetch().and_then(|inst| self.execute(&inst)) {
             Ok(()) => self.instret += 1,
             Err(e) => self.take_trap(Trap::Exception(e)),
         }
     }
 
-    /// Reads the instruction at the program counter.
-    fn fetch(&mut self) -> Result<u32, Exception> {
+    /// Reads and decodes the instruction at the program counter.
+    ///
+    /// The fetch reads 16 bits first. If the two low bits are not `11`, the
+    /// instruction is compressed. Otherwise the fetch reads the next 16
+    /// bits, which can be on the next page.
+    pub(crate) fn fetch(&mut self) -> Result<Instruction, Exception> {
         let pc = self.pc;
-        let paddr = self.translate(pc, Access::Fetch)?;
+        let low = self.fetch_half(pc)?;
+        if low & 3 != 3 {
+            return Ok(decode_compressed(low));
+        }
+        let high = self.fetch_half(pc.wrapping_add(2))?;
+        Ok(decode((u32::from(high) << 16) | u32::from(low)))
+    }
+
+    fn fetch_half(&mut self, vaddr: u64) -> Result<u16, Exception> {
+        let paddr = self.translate(vaddr, Access::Fetch)?;
         self.bus
-            .read(paddr, 4)
-            .map(|v| v as u32)
-            .map_err(|_| Exception::InstructionAccessFault(pc))
+            .read(paddr, 2)
+            .map(|v| v as u16)
+            .map_err(|_| Exception::InstructionAccessFault(vaddr))
     }
 
     /// Turns a virtual address into a physical address. Without the MMU,

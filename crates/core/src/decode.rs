@@ -344,6 +344,18 @@ pub fn decode(raw: u32) -> Instruction {
     }
 }
 
+/// Decodes one 16-bit instruction of the C extension. The result has the
+/// operation of the 32-bit form, a length of 2, and the 16 raw bits.
+pub fn decode_compressed(c: u16) -> Instruction {
+    let mut inst = match crate::compressed::expand(c) {
+        Some(full) => decode(full),
+        None => Instruction::new(Op::Illegal, 0),
+    };
+    inst.raw = u32::from(c);
+    inst.len = 2;
+    inst
+}
+
 /// Decodes the AMO opcode of the A extension.
 fn decode_atomic(raw: u32) -> Instruction {
     let illegal = Instruction::new(Op::Illegal, raw);
@@ -510,6 +522,16 @@ mod tests {
         assert_eq!(decode(0xe0c5_b52f).op, Op::AmomaxuD);
         // lr.w with rs2 != 0 is reserved.
         assert_eq!(decode(0x1015_a52f).op, Op::Illegal);
+    }
+
+    #[test]
+    fn a_compressed_instruction_keeps_its_own_bits_and_length() {
+        // c.addi16sp sp, -64
+        let i = decode_compressed(0x7139);
+        assert_eq!((i.op, i.rd, i.rs1, i.imm), (Op::Addi, 2, 2, -64));
+        assert_eq!((i.raw, i.len), (0x7139, 2));
+        let i = decode_compressed(0);
+        assert_eq!((i.op, i.raw, i.len), (Op::Illegal, 0, 2));
     }
 
     #[test]
