@@ -29,8 +29,8 @@ flowchart LR
 | M0 | Done | A test program exits with the code that it writes to `tohost`. |
 | M1 | Done | Each `rv64ui-p-*` test passes. |
 | M2 | Done | Each `rv64um-p-*`, `rv64ua-p-*` and `rv64uc-p-*` test passes. |
-| M3 | Not started | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
-| M4 | Not started | The `-v-` form of each test above passes. |
+| M3 | Done but for one test | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
+| M4 | Done | The `-v-` form of each test above passes. |
 | M5 | Not started | Each `rv64uf-*` and `rv64ud-*` test passes. |
 | M6 | Not started | xv6 boots to its shell, and `usertests` passes. |
 | M7 | Not started | Linux boots to a BusyBox shell. |
@@ -87,12 +87,24 @@ delegation, the pending and enable bits of interrupts, `wfi` and `fence.i`.
 
 Exit test: `hartwood-testsuite rv64mi-p- rv64si-p-` reports no failure.
 
+Status: 16 of 17 `rv64mi-p` and 7 of 7 `rv64si-p` tests pass. Two of the
+`rv64si-p` tests (`dirty` and `icache-alias`) turn on paging, so they pass
+only with M4. `rv64mi-p-csr` runs `fmv.s.x` to check that a store of a float
+does nothing while `mstatus.FS` is off. It fails until M5 adds F.
+M3 also added 16 PMP entries, the trigger CSRs with no trigger, and counters
+that a write can set.
+
 ## M4: the Sv39 MMU
 
 Work: the page table walk, the permission checks with SUM, MXR and the A and
 D bits, page faults, a TLB, and `sfence.vma`.
 
 Exit test: the `-v-` form of each suite above reports no failure.
+
+Status: done on 2026-11-13. Each `-v-` test of `rv64ui`, `rv64um`, `rv64ua`
+and `rv64uc` passes: 87 of 87. 73 unit and integration tests pass, and seven
+of them build a page table and check the walk, A and D, SUM, the TLB and a
+load across two pages.
 
 ## M5: the F and D extensions
 
