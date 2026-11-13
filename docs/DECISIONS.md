@@ -186,3 +186,54 @@ reservation is on memory, not on a name for it. With one hart, no other
 hart can break a reservation, so a trap is the event that must: after a
 context switch, the `sc` of the old thread must fail. The specification
 allows an implementation to fail an `sc` for more reasons than it lists.
+
+## D15: hartwood has 16 PMP entries, and checks them
+
+This entry replaces D12.
+
+**Options:** zero PMP entries, entries that hold values and check nothing,
+or 16 entries with the checks.
+
+**Choice:** 16 entries with TOR, NA4 and NAPOT, the L bit, and a check of
+each fetch, load, store and page table read. With no lock, an access from
+M-mode skips the check at once.
+
+**Reason:** D12 chose zero entries, which the specification allows. The
+`rv64mi-p-pmpaddr` test then fails: it needs a `pmpaddr0` that holds a
+value. The tests are the oracle, so D12 was wrong for this project.
+Registers that hold a value and check nothing would pass the test and tell a
+lie to OpenSBI, which then trusts its protection of its own memory. The
+checks cost a loop over 16 entries on each access from S-mode or U-mode.
+M9 measures that cost.
+
+## D16: The TLB is direct mapped, and holds 4 KiB pages only
+
+**Options:** no TLB, a fully associative TLB, or a direct mapped TLB.
+For a superpage: one entry for the whole page, or one entry for each 4 KiB
+page that the hart touches.
+
+**Choice:** 256 entries, indexed by the low bits of the virtual page number.
+A superpage fills one entry for each 4 KiB page. A hit checks the
+permissions again. A store to a page that is not dirty walks again.
+`sfence.vma` with `rs1 = x0` flushes each entry, and with an address it
+flushes that page. A write to `satp` flushes each entry.
+
+**Reason:** a walk is three reads of memory, and a hit is one compare.
+A direct mapped TLB needs no search and no policy to replace an entry. One
+size of page makes the lookup one index and one compare. The permissions
+depend on the mode, SUM and MXR, which software can change with no fence,
+so the entry keeps the bits of the PTE and not a decision. hartwood has no
+ASIDs, so `rs2` of `sfence.vma` does not matter. The flush on a write to
+`satp` costs little, and protects a program that changes the table and
+forgets the fence.
+
+## D17: The hart sets A and D in memory
+
+**Options:** take a page fault when A or D is clear, and let software set
+them (Svade), or set them in the page table (Svadu).
+
+**Choice:** the walk sets A on each use and D on each store, after the
+permission check passes.
+
+**Reason:** `rv64si-p-dirty` checks that a store sets D. Linux works with
+both. A page fault for each first use of a page makes a boot slower.
