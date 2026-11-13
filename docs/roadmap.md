@@ -32,7 +32,7 @@ flowchart LR
 | M3 | Done | Each `rv64mi-p-*` and `rv64si-p-*` test passes. |
 | M4 | Done | The `-v-` form of each test above passes. |
 | M5 | Done | Each `rv64uf-*` and `rv64ud-*` test passes. |
-| M6 | Not started | xv6 boots to its shell, and `usertests` passes. |
+| M6 | Done | xv6 boots to its shell, and `usertests` passes. |
 | M7 | Not started | Linux boots to a BusyBox shell. |
 | M8 | Not started | Linux boots in the browser, and the debugger works on xv6. |
 | M9 | Not started | The README has the benchmarks and the demo is on GitHub Pages. |
@@ -136,6 +136,17 @@ device tree that matches the `virt` map.
 
 Exit test: xv6 boots to its shell, `usertests` passes, and a person can
 type commands in `hartwood run`.
+
+Status: done on 2026-11-13.
+
+- xv6 at commit `fa2ddcb` boots to its shell, and `ls` lists the file
+  system. The images workflow runs this on each push.
+- `usertests` prints `ALL TESTS PASSED`: 66 tests, in 35.6 minutes of host
+  time on the build before M9.
+- Keys typed on a pseudo-terminal reach the shell of xv6 through raw mode,
+  and Ctrl-A then X ends the run with code 0.
+- The first boot hung for ten minutes. A trace showed no fault: `uartinit`
+  cleared the FIFO, so the scripted `ls` was lost (D24).
 
 ## M7: Linux
 
