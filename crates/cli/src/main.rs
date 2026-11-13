@@ -7,11 +7,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use hartwood_core::boot::{BootImages, boot};
 use hartwood_core::bus::Bus;
 use hartwood_core::cpu::{Cpu, Stop};
-use hartwood_core::elf::Elf;
 
 use crate::console::Console;
 
@@ -30,8 +30,20 @@ enum Command {
 
 #[derive(clap::Args)]
 struct RunArgs {
-    /// The ELF file to run.
+    /// The ELF file to run, or a raw firmware image such as OpenSBI.
     image: PathBuf,
+    /// A raw kernel image that the firmware starts, at 0x80200000.
+    #[arg(long)]
+    kernel: Option<PathBuf>,
+    /// An initramfs. The device tree tells the kernel where it is.
+    #[arg(long)]
+    initrd: Option<PathBuf>,
+    /// The kernel command line.
+    #[arg(long, default_value = "console=ttyS0")]
+    append: String,
+    /// A device tree file to use instead of the one that hartwood writes.
+    #[arg(long)]
+    dtb: Option<PathBuf>,
     /// A raw disk image for the virtio block device. The emulator changes a
     /// copy in memory, and not the file.
     #[arg(long)]
@@ -71,13 +83,15 @@ fn read_file(path: &PathBuf) -> Result<Vec<u8>> {
 }
 
 fn run(args: &RunArgs) -> Result<ExitCode> {
-    let bytes = read_file(&args.image)?;
-    let elf =
-        Elf::parse(&bytes).with_context(|| format!("cannot load {}", args.image.display()))?;
+    let images = BootImages {
+        firmware: read_file(&args.image)?,
+        kernel: args.kernel.as_ref().map(read_file).transpose()?,
+        initrd: args.initrd.as_ref().map(read_file).transpose()?,
+        bootargs: args.append.clone(),
+        dtb: args.dtb.as_ref().map(read_file).transpose()?,
+    };
     let mut cpu = Cpu::new(Bus::new(args.ram_mib << 20));
-    if cpu.load_elf(&elf).is_err() {
-        bail!("a segment of {} is outside the RAM", args.image.display());
-    }
+    boot(&mut cpu, &images).with_context(|| format!("cannot boot {}", args.image.display()))?;
     if let Some(drive) = &args.drive {
         cpu.bus.virtio.disk = read_file(drive)?;
     }
