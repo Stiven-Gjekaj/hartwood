@@ -1,0 +1,13 @@
+#!/bin/sh
+# The first program of the initramfs. It mounts the virtual file systems
+# and starts a shell on the console.
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mount -t tmpfs tmpfs /tmp
+export HOME=/root PATH=/bin:/sbin:/usr/bin:/usr/sbin PS1='~ # '
+echo
+echo "Welcome to Linux on hartwood."
+echo
+cd /root
+exec setsid cttyhack /bin/sh
