@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>hartwood</title>
+    <meta name="description" content="An RV64GC emulator in Rust that boots Linux in the browser." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2309090b'/%3E%3Cpath d='M9 7v18M23 7v18M9 16h14' stroke='%23e4e4e7' stroke-width='3'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="logo">hartwood</span>
+        <span class="tagline">RV64GC in Rust and WebAssembly</span>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Machine</span>
+          <select id="machine">
+            <option value="linux">Linux (OpenSBI + BusyBox)</option>
+            <option value="xv6">xv6-riscv</option>
+          </select>
+        </label>
+        <button id="boot" class="primary">Boot</button>
+        <button id="run" disabled>Run</button>
+        <button id="pause" disabled>Pause</button>
+        <button id="step" disabled title="Run one instruction">Step</button>
+        <button id="step100" disabled title="Run 100 instructions">Step 100</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel console">
+        <div class="panel-title">
+          <span>Console</span>
+          <span id="status" class="status">Choose a machine and press Boot.</span>
+        </div>
+        <div id="terminal"></div>
+      </section>
+
+      <section class="panel debugger">
+        <div class="panel-title">
+          <span>Debugger</span>
+          <span id="pc" class="mono dim"></span>
+        </div>
+
+        <div class="breakpoints">
+          <input id="bp-input" class="mono" placeholder="Breakpoint address, such as 80200000" spellcheck="false" />
+          <button id="bp-add">Add</button>
+          <ul id="bp-list" class="mono"></ul>
+        </div>
+
+        <details open>
+          <summary>Disassembly</summary>
+          <div id="disasm" class="mono table"></div>
+        </details>
+        <details open>
+          <summary>Registers</summary>
+          <div id="xregs" class="mono grid"></div>
+        </details>
+        <details>
+          <summary>Floating point registers</summary>
+          <div id="fregs" class="mono grid"></div>
+        </details>
+        <details open>
+          <summary>CSRs</summary>
+          <div id="csrs" class="mono grid"></div>
+        </details>
+        <details open>
+          <summary>Memory</summary>
+          <div class="memory-controls">
+            <input id="mem-addr" class="mono" value="80000000" spellcheck="false" />
+            <label><input id="mem-virtual" type="checkbox" /> virtual</label>
+            <button id="mem-go">Show</button>
+          </div>
+          <pre id="memory" class="mono"></pre>
+        </details>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <a href="https://github.com/Stiven-Gjekaj/hartwood">Source on GitHub</a>
+      <span class="dim">Ctrl-C and the other keys go to the guest.</span>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
