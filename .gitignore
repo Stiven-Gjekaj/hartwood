@@ -1,0 +1,26 @@
+# The output of cargo. It is made from the source.
+/target/
+
+# The sources and the images that the scripts download and build. A script
+# makes each of them again, so none of them belongs in the repository.
+/build/
+
+# The output of the web frontend. npm and wasm-pack make it from the source.
+/web/node_modules/
+/web/dist/
+/web/src/pkg/
+/web/public/images/
+
+# Operating system files.
+.DS_Store
+Thumbs.db
+
+# Editor and tool directories. What the project asks of an assistant is in
+# AGENTS.md, which every contributor reads and no tool has to be configured
+# to obey.
+.idea/
+.vscode/
+.claude/
+
+# The checksums of a release, which docs/releasing.md downloads here.
+/release/
