@@ -16,7 +16,7 @@ use hartwood_core::cpu::{Cpu, Stop};
 use crate::console::Console;
 
 #[derive(Parser)]
-#[command(version, about = "An RV64GC emulator")]
+#[command(name = "hartwood", version, about = "An RV64GC emulator")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

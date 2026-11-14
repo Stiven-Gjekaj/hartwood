@@ -43,3 +43,16 @@ fn trace_prints_each_instruction() {
     assert_eq!(text.lines().count(), 3);
     assert!(text.starts_with("0000000080000000 00001297"));
 }
+
+#[test]
+fn version_names_the_command_and_not_the_package() {
+    let out = Command::new(env!("CARGO_BIN_EXE_hartwood"))
+        .arg("--version")
+        .output()
+        .expect("hartwood starts");
+    let text = String::from_utf8(out.stdout).expect("the version is text");
+    assert_eq!(
+        text.trim(),
+        format!("hartwood {}", env!("CARGO_PKG_VERSION"))
+    );
+}
