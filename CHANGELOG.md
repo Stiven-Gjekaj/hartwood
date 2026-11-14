@@ -8,7 +8,7 @@ Every release is written here, newest first. A version is `MAJOR.MINOR.PATCH`.
 
 ## Unreleased
 
-## 0.1.0 - 2026-11-13
+## 0.1.0 - 2026-11-14
 
 The first release.
 
@@ -26,6 +26,10 @@ The first release.
   an initramfs, with the UART on the terminal. `--trace`, `--input`,
   `--until` and `--stats` help to debug and to test.
 - `hartwood-testsuite`: runs the riscv-tests programs and prints a table.
+- OpenSBI 1.9 boots Linux 6.18.63 to a BusyBox shell, in the terminal and
+  in the browser. xv6 boots and passes its `usertests`.
+- About 94 million instructions a second on xv6 and 56 million on Linux,
+  on an Apple M5. `scripts/bench.sh` measures it.
 - A web frontend: the emulator in a Web Worker, an xterm.js console, run,
   pause and step, breakpoints, the registers, the CSRs, the memory and a
   disassembly.
