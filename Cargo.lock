@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "hartwood-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -211,21 +211,21 @@ dependencies = [
 
 [[package]]
 name = "hartwood-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "hartwood-core",
 ]
 
 [[package]]
 name = "hartwood-testsuite"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "hartwood-core",
 ]
 
 [[package]]
 name = "hartwood-wasm"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "hartwood-core",
  "wasm-bindgen",
