@@ -12,6 +12,7 @@ _One core, for the terminal and for the web. No JIT, and no unsafe code._
 ![RISC-V](https://img.shields.io/badge/risc--v-27272a?style=for-the-badge&logo=riscv&logoColor=f4f4f5)
 ![WebAssembly](https://img.shields.io/badge/webassembly-3f3f46?style=for-the-badge&logo=webassembly&logoColor=f4f4f5)
 [![MIT licence](https://img.shields.io/badge/mit_licence-e4e4e7?style=for-the-badge&logoColor=09090b)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Stiven-Gjekaj/hartwood?style=for-the-badge&label=release&labelColor=f4f4f5&color=f4f4f5)](https://github.com/Stiven-Gjekaj/hartwood/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/Stiven-Gjekaj/hartwood/ci.yml?branch=main&style=for-the-badge&label=ci&labelColor=f4f4f5&color=f4f4f5)](https://github.com/Stiven-Gjekaj/hartwood/actions/workflows/ci.yml)
 
 <p align="center">
@@ -35,6 +36,8 @@ _One core, for the terminal and for the web. No JIT, and no unsafe code._
 > passes. xv6 boots and passes its `usertests`. OpenSBI starts Linux 6.18,
 > which runs BusyBox to a shell. The [live demo](https://stiven-gjekaj.github.io/hartwood/)
 > does the same in a Web Worker, with a debugger beside the console.
+> Version 1.0.0 is out, with binaries for macOS, Linux and Windows on the
+> [release page](https://github.com/Stiven-Gjekaj/hartwood/releases/latest).
 > [docs/roadmap.md](docs/roadmap.md) holds each milestone and its exit
 > test, and [docs/DECISIONS.md](docs/DECISIONS.md) holds every design
 > decision and the reason behind it.
