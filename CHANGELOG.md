@@ -8,9 +8,14 @@ Every release is written here, newest first. A version is `MAJOR.MINOR.PATCH`.
 
 ## Unreleased
 
-## 0.1.0 - 2026-11-14
+## 1.0.0 - 2026-11-15
 
-The first release.
+The first release, and the first stable one. Each milestone of the plan is
+done.
+
+From this release, a change that breaks a flag of `hartwood run`, or the
+API of the WebAssembly package that the web frontend calls, needs a new
+major version.
 
 ### Added
 
