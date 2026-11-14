@@ -35,7 +35,7 @@ flowchart LR
 | M6 | Done | xv6 boots to its shell, and `usertests` passes. |
 | M7 | Done | Linux boots to a BusyBox shell. |
 | M8 | Done | Linux boots in the browser, and the debugger works on xv6. |
-| M9 | In progress | The README has the benchmarks and the demo is on GitHub Pages. |
+| M9 | Done | The README has the benchmarks and the demo is on GitHub Pages. |
 
 ---
 
@@ -160,7 +160,7 @@ Status: done on 2026-11-14.
 
 - OpenSBI 1.9 starts Linux 6.18.63, which reaches the BusyBox shell.
   `uname -a`, `ls /`, `cat /proc/cpuinfo` and `echo DONE-$((6*7))` run in
-  86.1 million steps: 2.08 s on the CI runner, 1.54 s on an M-series Mac.
+  86.1 million steps: 2.08 s on the CI runner, 1.54 s on an Apple M5.
   The images workflow runs this test on each push.
 - `poweroff -f` turns the machine off through the test device, and the
   emulator stops.
@@ -187,7 +187,7 @@ Status: done on 2026-11-14.
 - On https://stiven-gjekaj.github.io/hartwood/, Linux boots to the BusyBox
   shell, and `uname -a`, `ls /` and `head -4 /proc/cpuinfo` typed in the
   xterm.js console give the same output as in the terminal. The page
-  showed 53 million steps a second in Chrome.
+  showed 53 million steps a second in a Chromium browser.
 - On xv6 in the browser, a breakpoint on `main` (0x80000ea0) stops after 68
   instructions, Step moves the program counter by one instruction, the
   memory view shows the bytes at `main` (`41 11`, the `c.addi sp, -16` that
@@ -206,8 +206,24 @@ Exit test: the README has the architecture diagram, the table of test
 results, the benchmarks, a recording of the boot in the browser, and the
 design decisions. The demo is on GitHub Pages.
 
-Status on 2026-11-13: not done. A profile came first (D26). Four changes
-took the boot of xv6 with `ls` (441.4 million steps) from 29.8 to about 51
-million steps a second, in wall time on a loaded machine. The numbers for
-the README must come from a quiet machine. The README, the recording and
-the release are still to do.
+Status: done on 2026-11-14.
+
+- A profile came first (D26). Four changes follow it. On an Apple M5 with
+  no other load, `scripts/bench.sh` gives the median of five runs:
+
+  | Workload | Before | After |
+  |---|---|---|
+  | xv6 boots and runs `ls` (441.4 million steps) | 72.7 M/s | 94.1 M/s |
+  | Linux boots and runs three commands (86.1 million steps) | 33.0 M/s | 56.3 M/s |
+
+  "Before" is commit `5eda156` with the `sfence.vma` fix added, because
+  Linux does not boot without that fix. An earlier note here said "from
+  29.8 to about 51". Those numbers were wall time on a machine with a load
+  average of 7, and they are replaced by these.
+- The README has the architecture diagram, the table of test results, the
+  benchmarks, a recording of Linux in the browser, and the design
+  decisions.
+- The demo is on GitHub Pages, and the pages workflow deploys it after each
+  green run of the images workflow.
+- The stretch goal, `riscv-arch-test` through RISCOF, is not done. The
+  README names it as future work.
