@@ -11,6 +11,8 @@ test.
 Each milestone is many small commits.
 [DECISIONS.md](DECISIONS.md) gives the reason for each choice.
 
+Each milestone is done. Version 1.0.0 is out since 2026-11-15.
+
 ```mermaid
 flowchart LR
     M0[M0 scaffold] --> M1[M1 RV64I]
