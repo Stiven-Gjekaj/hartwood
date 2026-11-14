@@ -34,7 +34,7 @@ flowchart LR
 | M5 | Done | Each `rv64uf-*` and `rv64ud-*` test passes. |
 | M6 | Done | xv6 boots to its shell, and `usertests` passes. |
 | M7 | Done | Linux boots to a BusyBox shell. |
-| M8 | In progress | Linux boots in the browser, and the debugger works on xv6. |
+| M8 | Done | Linux boots in the browser, and the debugger works on xv6. |
 | M9 | In progress | The README has the benchmarks and the demo is on GitHub Pages. |
 
 ---
@@ -182,12 +182,19 @@ Web Worker.
 Exit test: Linux boots in the browser to a shell, and the debugger works on
 xv6.
 
-Status on 2026-11-13: not done. The page, the worker and the bindings are
-built. On xv6 in the browser, a breakpoint on `main` stops after 68
-instructions, a step moves the PC by one instruction, the memory view
-shows the bytes at `main`, and Run continues. Linux in the browser waits
-for M7. The Pages workflow is ready and Pages is on, but it has not
-deployed yet.
+Status: done on 2026-11-14.
+
+- On https://stiven-gjekaj.github.io/hartwood/, Linux boots to the BusyBox
+  shell, and `uname -a`, `ls /` and `head -4 /proc/cpuinfo` typed in the
+  xterm.js console give the same output as in the terminal. The page
+  showed 53 million steps a second in Chrome.
+- On xv6 in the browser, a breakpoint on `main` (0x80000ea0) stops after 68
+  instructions, Step moves the program counter by one instruction, the
+  memory view shows the bytes at `main` (`41 11`, the `c.addi sp, -16` that
+  the disassembly shows), and Run continues.
+- Two faults showed up in the browser and are fixed: the worker fetched the
+  boot images from a wrong path and got the index page, and the padding of
+  the console cut off its last row.
 
 ## M9: speed and polish
 
