@@ -33,7 +33,7 @@ flowchart LR
 | M4 | Done | The `-v-` form of each test above passes. |
 | M5 | Done | Each `rv64uf-*` and `rv64ud-*` test passes. |
 | M6 | Done | xv6 boots to its shell, and `usertests` passes. |
-| M7 | In progress | Linux boots to a BusyBox shell. |
+| M7 | Done | Linux boots to a BusyBox shell. |
 | M8 | In progress | Linux boots in the browser, and the debugger works on xv6. |
 | M9 | In progress | The README has the benchmarks and the demo is on GitHub Pages. |
 
@@ -156,17 +156,21 @@ device tree of M6. The build scripts are in `scripts/`.
 Exit test: Linux boots to a BusyBox shell, and `uname -a`, `ls /` and
 `cat /proc/cpuinfo` work.
 
-Status on 2026-11-13: not done.
+Status: done on 2026-11-14.
 
-- OpenSBI 1.9 boots, and starts Linux 6.18.63. Linux reaches `/init` in
-  70.6 million steps.
+- OpenSBI 1.9 starts Linux 6.18.63, which reaches the BusyBox shell.
+  `uname -a`, `ls /`, `cat /proc/cpuinfo` and `echo DONE-$((6*7))` run in
+  86.1 million steps: 2.08 s on the CI runner, 1.54 s on an M-series Mac.
+  The images workflow runs this test on each push.
+- `poweroff -f` turns the machine off through the test device, and the
+  emulator stops.
+- The kernel reports `rv64imafdc_zicntr_zicsr_zifencei_zaamo_zalrsc_zca_zcd_sstc`
+  in `/proc/cpuinfo`.
 - The first boot looped on a page fault. The cause: `sfence.vma` with an
   address in the upper half flushed nothing, so Linux wrote its page
   tables through a stale fixmap entry. Fixed, with a test.
-- BusyBox then stops on `vsetvli`. QEMU stops on the same instruction, so
-  the fault is in the image: the compiler of `ubuntu-latest` targets RVA23,
-  and its C library has vector code. The Linux build now runs on Ubuntu
-  24.04. The CI run that checks this was still running when work stopped.
+- BusyBox then stopped on `vsetvli`. QEMU stopped on the same instruction,
+  so the fault was in the image (D27).
 
 ## M8: the web frontend
 
