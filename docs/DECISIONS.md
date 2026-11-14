@@ -400,3 +400,18 @@ Each change attacks one line of that table:
 
 A cache of basic blocks or a JIT can go further, but each one must catch a
 write to code. The plan put the JIT out of scope.
+
+## D27: The Linux images build on Ubuntu 24.04
+
+**Options:** `ubuntu-latest`, a musl toolchain, or Ubuntu 24.04.
+
+**Choice:** the job that builds OpenSBI, Linux and BusyBox runs on
+`ubuntu-24.04`.
+
+**Reason:** from Ubuntu 25.10, the RISC-V packages of Ubuntu target the
+RVA23 profile, which has the vector extension. The static C library that
+BusyBox links holds vector code, and hartwood has no V. The first BusyBox
+stopped on `vsetvli` on hartwood and on QEMU at the same address, which
+showed that the fault was in the image and not in the emulator. Ubuntu
+24.04 targets rv64gc. A musl toolchain would also work, but it is one more
+download to pin.
