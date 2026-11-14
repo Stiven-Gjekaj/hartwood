@@ -177,6 +177,13 @@ button.primary {
   flex: 1;
   min-height: 420px;
   background: var(--term-bg);
+}
+
+/* The padding goes on the terminal element and not on its container. The
+   fit addon takes the padding of the terminal off the space that it fills,
+   but not the padding of the container, so padding there cut off the last
+   row. */
+.console #terminal .xterm {
   padding: 8px;
 }
 
